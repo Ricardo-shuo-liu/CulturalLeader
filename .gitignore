@@ -1,0 +1,14 @@
+__pycache__/
+*.py[cod]
+.env
+.venv/
+data/*.db
+data/*.db-journal
+.tools/
+node_modules/
+frontend/vendor/
+tests_artifacts/
+*.log
+.pytest_cache/
+LKH-3.0.14/SRC/OBJ/
+LKH-3.0.14/LKH.dSYM/

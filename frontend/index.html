@@ -1,0 +1,111 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>CulturalLeader · 文旅数字人讲台</title>
+    <link rel="stylesheet" href="/css/stage.css" />
+    <script type="importmap">
+      {
+        "imports": {
+          "three": "/vendor/three/build/three.module.js",
+          "three/addons/": "/vendor/three/examples/jsm/",
+          "@pixiv/three-vrm": "/vendor/three-vrm/three-vrm.module.js"
+        }
+      }
+    </script>
+  </head>
+  <body>
+    <canvas id="stage"></canvas>
+    <div id="vignette" aria-hidden="true"></div>
+    <div id="labels" aria-hidden="true"></div>
+
+    <div id="timeboard" class="glass">
+      <div class="tb-main">
+        <div id="tb-icon" class="tb-icon">☀</div>
+        <div class="tb-text">
+          <div id="tb-time">--:--:--</div>
+          <div class="tb-sub"><span id="tb-phase">白昼</span> · <span id="tb-mode">实时跟随</span></div>
+        </div>
+      </div>
+      <div id="tb-alt" class="tb-alt">高度角 +0.0°</div>
+      <div class="tb-panel">
+        <input id="tb-slider" type="range" min="0" max="1439" value="720" step="1" />
+        <button id="tb-live" type="button">回到实时</button>
+      </div>
+    </div>
+
+    <button id="mute-btn" class="ghost-btn" type="button">静音</button>
+
+    <canvas id="avatar-canvas"></canvas>
+    <div id="speech-bubble"></div>
+
+    <aside id="panel" class="glass">
+      <header>
+        <div>
+          <h1 id="panel-name">城市</h1>
+          <div class="panel-meta"><span id="panel-province"></span> <span id="panel-tags"></span></div>
+        </div>
+        <button id="panel-close" class="ghost-btn" type="button">合拢幕布</button>
+      </header>
+      <p id="panel-summary" class="panel-summary"></p>
+      <div class="panel-narration">
+        <div class="label">讲解词</div>
+        <p id="panel-narration"></p>
+        <button id="replay-btn" class="ghost-btn" type="button">重播讲解</button>
+      </div>
+      <div class="panel-chat">
+        <div class="label">与数字人对话</div>
+        <div id="chat-log"></div>
+        <div class="chat-input-row">
+          <input id="chat-input" type="text" placeholder="问点什么，例如：什么时候来最舒服？" />
+          <button id="chat-send" type="button">发送</button>
+        </div>
+        <button id="mic-btn" type="button" class="mic-btn">按住说话</button>
+      </div>
+    </aside>
+
+    <div id="hint">拖动旋转 · 滚轮缩放 · 右键平移 · 点击光点进入城市</div>
+    <button id="route-btn" class="tool-btn" type="button">路线规划</button>
+
+    <aside id="route-panel" class="glass">
+      <header>
+        <h1>巡游路线</h1>
+        <span class="panel-meta">LKH-3.0.14 求解</span>
+      </header>
+      <div class="label">已选城市</div>
+      <div id="route-list"></div>
+      <div class="route-actions">
+        <button id="route-solve" type="button">求解最优路线</button>
+        <button id="route-clear" type="button" class="ghost-inline">清空</button>
+      </div>
+      <pre id="route-result"></pre>
+    </aside>
+
+    <div id="toast"></div>
+    <div id="loading">正在铺陈幕布…</div>
+
+    <script>
+      // 页面级错误记录（调试与自动化验证使用，不影响正常运行）
+      window.__errors = [];
+      (function () {
+        const push = (kind, args) => {
+          try {
+            window.__errors.push(
+              kind + ': ' + Array.from(args).map((a) => (a && a.message) || String(a)).join(' ').slice(0, 400),
+            );
+          } catch (error) {
+            /* 忽略 */
+          }
+        };
+        const originalError = console.error.bind(console);
+        console.error = (...args) => { push('console.error', args); originalError(...args); };
+        const originalWarn = console.warn.bind(console);
+        console.warn = (...args) => { push('console.warn', args); originalWarn(...args); };
+        window.addEventListener('error', (event) => push('window.error', [event.message + ' @' + (event.filename || '') + ':' + (event.lineno || 0)]));
+        window.addEventListener('unhandledrejection', (event) => push('unhandledrejection', [event.reason && (event.reason.message || event.reason)]));
+      })();
+    </script>
+    <script type="module" src="/js/main.js"></script>
+  </body>
+</html>

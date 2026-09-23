@@ -1,0 +1,106 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>CulturalLeader · 内容后台</title>
+    <style>
+      :root {
+        --ink: #0b1a1f;
+        --paper: #e8dcc3;
+        --gold: #f2c879;
+      }
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        background: #08131a;
+        color: var(--paper);
+        font-family: "Songti SC", "STSong", "Noto Serif SC", serif;
+        display: grid;
+        grid-template-columns: 280px 1fr;
+        min-height: 100vh;
+      }
+      aside {
+        border-right: 1px solid rgba(232, 220, 195, 0.14);
+        padding: 18px;
+        overflow-y: auto;
+      }
+      main { padding: 24px 28px; max-width: 900px; }
+      h1 { font-size: 20px; letter-spacing: 3px; margin: 0 0 14px; }
+      button {
+        font-family: inherit;
+        padding: 8px 14px;
+        border-radius: 8px;
+        border: 1px solid rgba(242, 200, 121, 0.5);
+        background: rgba(242, 200, 121, 0.12);
+        color: var(--gold);
+        cursor: pointer;
+      }
+      input, textarea {
+        width: 100%;
+        padding: 8px 10px;
+        border-radius: 8px;
+        border: 1px solid rgba(232, 220, 195, 0.2);
+        background: rgba(6, 13, 18, 0.7);
+        color: var(--paper);
+        font-family: inherit;
+        font-size: 13px;
+      }
+      textarea { min-height: 110px; line-height: 1.7; }
+      label { display: block; font-size: 12px; margin: 12px 0 4px; color: rgba(232, 220, 195, 0.7); }
+      .row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+      .city-item {
+        padding: 8px 10px;
+        border-radius: 8px;
+        cursor: pointer;
+        border: 1px solid transparent;
+      }
+      .city-item:hover { border-color: rgba(242, 200, 121, 0.4); }
+      .city-item.active { background: rgba(242, 200, 121, 0.14); border-color: rgba(242, 200, 121, 0.6); }
+      .actions { display: flex; gap: 10px; margin-top: 18px; }
+      .hint { font-size: 12px; color: rgba(232, 220, 195, 0.5); }
+    </style>
+  </head>
+  <body>
+    <aside>
+      <h1>内容后台</h1>
+      <label for="token">后台令牌</label>
+      <input id="token" type="password" value="dev-token" />
+      <div class="actions">
+        <button id="load" type="button">读取城市</button>
+        <button id="create" type="button">新增城市</button>
+      </div>
+      <div id="list" style="margin-top: 18px"></div>
+    </aside>
+    <main>
+      <form id="form">
+        <div class="row">
+          <div><label for="f-name">名称</label><input id="f-name" /></div>
+          <div><label for="f-province">省份</label><input id="f-province" /></div>
+        </div>
+        <div class="row">
+          <div><label for="f-lng">经度（WGS84）</label><input id="f-lng" type="number" step="0.0001" /></div>
+          <div><label for="f-lat">纬度（WGS84）</label><input id="f-lat" type="number" step="0.0001" /></div>
+        </div>
+        <div class="row">
+          <div><label for="f-accent">光点颜色</label><input id="f-accent" /></div>
+          <div><label for="f-landmark">地标 key</label><input id="f-landmark" /></div>
+        </div>
+        <label for="f-tags">标签（逗号分隔）</label>
+        <input id="f-tags" />
+        <label for="f-summary">简介</label>
+        <textarea id="f-summary"></textarea>
+        <label for="f-narration">讲解词</label>
+        <textarea id="f-narration" style="min-height: 150px"></textarea>
+        <label for="f-knowledge">知识条目（每行一条，格式：问题 | 答案）</label>
+        <textarea id="f-knowledge" style="min-height: 150px"></textarea>
+        <div class="actions">
+          <button id="save" type="button">保存</button>
+          <button id="remove" type="button">删除</button>
+          <span class="hint" id="status"></span>
+        </div>
+      </form>
+    </main>
+    <script type="module" src="/js/admin.js"></script>
+  </body>
+</html>
