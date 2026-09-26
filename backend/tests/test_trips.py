@@ -106,9 +106,17 @@ def test_optimizer_prefers_lkh_when_available():
         assert plan["solver"] == "LKH-3.0.14", f"LKH 可用时应使用 LKH，实际：{plan['solver']}"
 
 
-def test_optimize_day_without_key_uses_estimation():
+def test_optimize_day_without_key_uses_estimation(monkeypatch):
+    # 测试意图是「无 Key 时降级为估算」：显式清空 Key，避免本机 .env 配好真实 Key 后误判
+    from backend.app.config import get_settings
+    from backend.app.db import init_db
+    from backend.app.services.tencent_map import TencentMapClient as _Client
+
+    monkeypatch.setenv("TENCENT_MAP_KEY", "")
+    get_settings.cache_clear()
+    init_db()  # 无 Key 时缓存表仍会被访问，先按 app 启动流程建表
     day = make_day(4)
-    plan = optimize_day(day, client=TencentMapClient())
+    plan = optimize_day(day, client=_Client())
     assert plan["order"], "应返回排序结果"
     assert len(plan["order"]) == 1 + 4, "出发点 + 4 个点位"
     assert plan["order"][0] == "酒店"
@@ -117,6 +125,8 @@ def test_optimize_day_without_key_uses_estimation():
     assert plan["end_time"] and plan["total_minutes"] > 0
     # 时间窗靠后的点不应被排到最前造成大量等待
     assert plan["waiting_minutes"] < plan["total_minutes"]
+    monkeypatch.delenv("TENCENT_MAP_KEY")
+    get_settings.cache_clear()
 
 
 def test_optimize_respects_locked_stop():

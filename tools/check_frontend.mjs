@@ -15,6 +15,8 @@ const { STAGE } = await import(path.join(root, 'frontend/js/config.js'));
 const { RANGES } = await import(path.join(root, 'frontend/js/data/ranges.js'));
 const tripUtils = await import(path.join(root, 'frontend/js/map/trip_utils.js'));
 const { CITIES_CN } = await import(path.join(root, 'frontend/js/data/cities-cn.js'));
+const mercator = await import(path.join(root, 'frontend/js/map/mercator.js'));
+const cityIndexUtils = await import(path.join(root, 'frontend/js/map/city_index.js'));
 
 const results = [];
 function check(name, fn) {
@@ -217,6 +219,85 @@ check('离线示意图投影落在画布内', () => {
     assert.ok(point.y >= 40 && point.y <= 560, `y 越界 ${point.y}`);
   }
   return '三点均在画布内';
+});
+
+check('Web Mercator 投影往返误差 < 1e-6', () => {
+  const samples = [
+    { lng: 116.4074, lat: 39.9042 },
+    { lng: 108.9398, lat: 34.3416 },
+    { lng: 75.99, lat: 39.47 },
+    { lng: 121.4737, lat: 31.2304 },
+  ];
+  let worst = 0;
+  for (const zoom of [4, 8, 12, 16]) {
+    for (const point of samples) {
+      const pixel = mercator.mercatorProject(point.lng, point.lat, zoom);
+      const back = mercator.mercatorUnproject(pixel.x, pixel.y, zoom);
+      worst = Math.max(worst, Math.abs(back.lng - point.lng), Math.abs(back.lat - point.lat));
+    }
+  }
+  assert.ok(worst < 1e-6, `最大往返误差 ${worst}`);
+  return `最大往返误差 ${worst.toExponential(2)}°`;
+});
+
+check('拖拽 200px：行政边界与点位同步位移', () => {
+  const view = mercator.createView({ lng: 108.94, lat: 34.26 }, 12, 900, 600);
+  const boundaryPoint = { lng: 108.9, lat: 34.3 };
+  const stop = { lng: 108.96, lat: 34.22 };
+  const beforeA = mercator.projectToScreen(boundaryPoint, view);
+  const beforeB = mercator.projectToScreen(stop, view);
+  const moved = mercator.panView(view, 200, -120);
+  const afterA = mercator.projectToScreen(boundaryPoint, moved);
+  const afterB = mercator.projectToScreen(stop, moved);
+  const deltaA = { x: afterA.x - beforeA.x, y: afterA.y - beforeA.y };
+  const deltaB = { x: afterB.x - beforeB.x, y: afterB.y - beforeB.y };
+  assert.ok(Math.abs(deltaA.x - 200) < 0.5, `边界 x 位移 ${deltaA.x}`);
+  assert.ok(Math.abs(deltaB.x - 200) < 0.5, `点位 x 位移 ${deltaB.x}`);
+  assert.ok(Math.abs(deltaA.y + 120) < 0.5 && Math.abs(deltaB.y + 120) < 0.5, `y 位移 ${deltaA.y}/${deltaB.y}`);
+  assert.ok(Math.abs(deltaA.x - deltaB.x) < 1e-6 && Math.abs(deltaA.y - deltaB.y) < 1e-6, '边界与点位位移必须一致');
+  return '边界与点位同时位移 200px 且完全一致';
+});
+
+check('缩放锚点下的地理位置不漂移', () => {
+  const view = mercator.createView({ lng: 108.94, lat: 34.26 }, 12, 900, 600);
+  const anchor = { x: 640, y: 220 };
+  const before = mercator.unprojectScreen(anchor.x, anchor.y, view);
+  const zoomed = mercator.zoomViewAt(view, 1.6, anchor);
+  const after = mercator.unprojectScreen(anchor.x, anchor.y, zoomed);
+  assert.ok(Math.abs(after.lng - before.lng) < 1e-9, `经度漂移 ${after.lng - before.lng}`);
+  assert.ok(Math.abs(after.lat - before.lat) < 1e-9, `纬度漂移 ${after.lat - before.lat}`);
+  return `锚点保持 ${before.lng.toFixed(6)},${before.lat.toFixed(6)}`;
+});
+
+check('比例尺误差 < 5%', () => {
+  let worst = 0;
+  for (const lat of [22, 34, 45]) {
+    for (const zoom of [8, 11, 14]) {
+      const bar = mercator.scaleBarKm(lat, zoom, 100);
+      const actual = (bar.km * 1000) / bar.pixels;
+      worst = Math.max(worst, Math.abs(actual - bar.metersPerPixel) / bar.metersPerPixel);
+      assert.ok(bar.pixels <= 100.0001, `长度超限 ${bar.pixels}`);
+      assert.ok(bar.pixels >= 20, `比例尺过短 ${bar.pixels}`);
+    }
+  }
+  assert.ok(worst < 0.05, `最大误差 ${(worst * 100).toFixed(2)}%`);
+  return `9 组比例尺最大误差 ${(worst * 100).toFixed(2)}%`;
+});
+
+check('统一城市索引：重点城市带 3D 地标、地级市齐全', () => {
+  const index = cityIndexUtils.mergeCityIndex([
+    { slug: 'xian', name: '西安', province: '陕西省', lng: 108.9398, lat: 34.3416, landmark_key: 'bell_tower' },
+    { slug: 'beijing', name: '北京', province: '北京市', lng: 116.4074, lat: 39.9042, landmark_key: 'tiantan' },
+  ]);
+  assert.ok(index.length >= 300, `城市数 ${index.length}`);
+  const xian = cityIndexUtils.findCity(index, '西安市');
+  assert.equal(xian.slug, 'xian');
+  assert.equal(xian.landmark_key, 'bell_tower');
+  assert.ok(xian.adcode && Number.isFinite(xian.lng) && Number.isFinite(xian.lat), '重点城市应带 adcode 与坐标');
+  const luoyang = cityIndexUtils.findCity(index, '洛阳');
+  assert.ok(luoyang && !luoyang.landmark_key && luoyang.adcode, '普通地级市应无地标但有 adcode');
+  assert.ok(cityIndexUtils.cityCardMeta(luoyang).includes('双击进入流程编辑'));
+  return `${index.length} 座城市（含 ${index.filter((city) => city.landmark_key).length} 座 3D 地标）`;
 });
 
 let failed = 0;

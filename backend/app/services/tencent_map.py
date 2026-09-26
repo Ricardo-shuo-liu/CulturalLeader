@@ -30,6 +30,7 @@ TTL = {
     "ws/district/v1/list": 30 * 86400,
     "ws/place/v1/search": 7 * 86400,
     "ws/place/v1/detail": 7 * 86400,
+    "ws/geocoder/v1": 30 * 86400,
     "ws/direction/v1/walking": 3 * 86400,
     "ws/direction/v1/driving": 3 * 86400,
     "ws/direction/v1/transit": 3 * 86400,
@@ -275,6 +276,36 @@ class TencentMapClient:
 
     def district_list(self) -> dict:
         return self.request("ws/district/v1/list", {})
+
+    def reverse_geocode(self, lng: float, lat: float) -> dict:
+        """逆地理编码：用户在地图上随手点一个位置时，尽量给它一个可读的名字。"""
+        payload = self.request(
+            "ws/geocoder/v1",
+            {
+                "location": f"{lat},{lng}",
+                "get_poi": 1,
+                # 注意：腾讯的 poi_options 用分号分隔（用逗号会报 status=348 参数错误）
+                "poi_options": "radius=200;page_size=3",
+            },
+        )
+        result = payload.get("result") or {}
+        component = result.get("address_component") or {}
+        ad_info = result.get("ad_info") or {}
+        formatted = (result.get("formatted_addresses") or {}).get("recommend") or ""
+        pois = result.get("pois") or []
+        nearest = pois[0] if pois else {}
+        name = nearest.get("title") or formatted or result.get("address") or ""
+        return {
+            "name": str(name).strip(),
+            "address": formatted or result.get("address") or "",
+            "city": component.get("city") or "",
+            "district": component.get("district") or "",
+            "adcode": str(ad_info.get("adcode") or ""),
+            "lng": lng,
+            "lat": lat,
+            "poi_id": nearest.get("id") or "",
+            "estimated": False,
+        }
 
     def route(self, mode: str, origin: dict, destination: dict, *, city: str = "", cityd: str = "") -> dict:
         """单段路径：walking / taxi(driving) / transit；腾讯 duration 单位为分钟。"""

@@ -1,0 +1,334 @@
+/* 流程编辑 / 我的攻略 / 城内地图控件（在 stage.css 之后加载，用于覆盖与新增） */
+
+/* ── 面板通用 ── */
+/* 注意：腾讯 GL 自己有一个 z-index:1000 的交互层盖在容器上，
+   我们的浮层必须比它高，否则真实鼠标点击会全部落到地图上（只能用 JS 点）。 */
+#guide {
+  position: fixed;
+  inset: 0;
+  z-index: 30;
+  background: rgba(4, 9, 12, 0.96);
+  display: flex;
+  flex-direction: column;
+  font-family: var(--serif);
+  color: var(--paper);
+}
+
+#guide.hidden,
+#planner.hidden {
+  display: none !important;
+}
+
+.planner-title {
+  padding: 6px 10px;
+  min-width: 180px;
+  border-radius: 8px;
+  border: 1px solid rgba(232, 220, 195, 0.22);
+  background: rgba(8, 18, 23, 0.7);
+  color: var(--paper);
+  font-family: var(--serif);
+  font-size: 15px;
+}
+
+.planner-hint {
+  padding: 8px 18px;
+  border-bottom: 1px solid rgba(232, 220, 195, 0.1);
+  font-size: 12.5px;
+  color: rgba(232, 220, 195, 0.6);
+}
+
+.planner-note {
+  font-size: 12.5px;
+  color: rgba(232, 220, 195, 0.6);
+}
+
+/* ── 我的攻略 ── */
+.guide-main {
+  flex: 1;
+  display: grid;
+  grid-template-columns: 420px 1fr;
+  min-height: 0;
+}
+
+.guide-library {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.guide-library-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border-radius: 10px;
+  border: 1px solid rgba(232, 220, 195, 0.16);
+  background: rgba(8, 18, 23, 0.55);
+}
+
+.guide-library-item strong { font-size: 13px; }
+.guide-library-item small { flex: 1; font-size: 11px; opacity: 0.7; }
+
+.guide-library-item button,
+#guide .planner-stop-tools button {
+  padding: 5px 10px;
+  border-radius: 8px;
+  border: 1px solid rgba(232, 220, 195, 0.22);
+  background: rgba(8, 18, 23, 0.7);
+  color: rgba(240, 232, 214, 0.92);
+  font-family: var(--serif);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.guide-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  border-radius: 10px;
+  border: 1px solid rgba(232, 220, 195, 0.16);
+  background: rgba(8, 18, 23, 0.55);
+  margin-bottom: 8px;
+}
+
+.guide-notes {
+  margin-top: 4px;
+  padding: 4px 8px;
+  border-radius: 6px;
+  border: 1px solid rgba(232, 220, 195, 0.18);
+  background: rgba(4, 9, 12, 0.6);
+  color: var(--paper);
+  font-family: var(--serif);
+  font-size: 12px;
+}
+
+.guide-replace {
+  max-width: 130px;
+  padding: 4px 6px;
+  border-radius: 6px;
+  border: 1px solid rgba(232, 220, 195, 0.22);
+  background: rgba(8, 18, 23, 0.7);
+  color: var(--paper);
+  font-family: var(--serif);
+  font-size: 12px;
+}
+
+.guide-detail {
+  padding: 18px 22px;
+  overflow: auto;
+}
+
+.guide-detail .planner-plan {
+  max-height: none;
+  font-size: 13.5px;
+  line-height: 2;
+}
+
+/* ── 城内地图控件（比例尺 / 指北针 / 来源） ── */
+.map-overlay {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 1200;
+}
+
+.map-compass {
+  position: absolute;
+  right: 14px;
+  top: 14px;
+  width: 46px;
+  height: 46px;
+  border-radius: 50%;
+  border: 1px solid rgba(232, 220, 195, 0.3);
+  background: rgba(6, 13, 18, 0.72);
+  color: var(--gold);
+  font-family: var(--serif);
+  font-size: 12px;
+  cursor: pointer;
+  pointer-events: auto;
+}
+
+.map-compass-needle {
+  position: absolute;
+  left: 50%;
+  top: 8px;
+  width: 0;
+  height: 0;
+  transform: translateX(-50%);
+  border-left: 5px solid transparent;
+  border-right: 5px solid transparent;
+  border-bottom: 14px solid rgba(242, 200, 121, 0.9);
+}
+
+.map-scalebar {
+  position: absolute;
+  left: 16px;
+  bottom: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  font-size: 11.5px;
+  color: rgba(240, 232, 214, 0.82);
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.8);
+}
+
+.map-scalebar-bar {
+  display: block;
+  height: 8px;
+  border: 1px solid rgba(240, 232, 214, 0.75);
+  border-top: none;
+  min-width: 36px;
+}
+
+.map-attribution {
+  position: absolute;
+  right: 14px;
+  bottom: 14px;
+  font-size: 11.5px;
+  color: rgba(232, 220, 195, 0.55);
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.8);
+}
+
+/* ── 导航按钮：抽屉打开时收起，关掉抽屉再出现 ── */
+.nav-toggle {
+  transition: opacity 0.24s ease, transform 0.24s ease;
+}
+
+body.drawer-open .nav-toggle,
+body:has(#drawer.open) .nav-toggle {
+  opacity: 0;
+  transform: translateX(-120%);
+  pointer-events: none;
+}
+
+/* ── 腾讯 GL 上的自绘点位标记层（GL 没有可用的 Marker HTML 能力） ── */
+.map-markers {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+  z-index: 1100;
+}
+
+.map-marker {
+  position: absolute;
+  left: 0;
+  top: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  margin: -13px 0 0 -13px;
+  pointer-events: auto;
+  cursor: pointer;
+  will-change: transform;
+}
+
+/* ── 每段通勤时长 / 里程的浮动标签 ── */
+.map-legs {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+  z-index: 1050;
+}
+
+.map-leg {
+  position: absolute;
+  left: 0;
+  top: 0;
+  padding: 2px 7px;
+  border-radius: 999px;
+  background: rgba(6, 13, 18, 0.82);
+  border: 1px solid rgba(242, 200, 121, 0.35);
+  color: rgba(240, 232, 214, 0.92);
+  font-size: 11.5px;
+  white-space: nowrap;
+  will-change: transform;
+}
+
+/* ── 地图取点弹窗（在地图上点一下即可加点位） ── */
+.planner-map-tip {
+  font-size: 12px;
+  color: rgba(242, 200, 121, 0.85);
+  padding: 3px 8px;
+  border-radius: 999px;
+  border: 1px dashed rgba(242, 200, 121, 0.45);
+  white-space: nowrap;
+}
+
+.map-picker {
+  position: absolute;
+  z-index: 1300;
+  width: 236px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  border: 1px solid rgba(242, 200, 121, 0.55);
+  background: rgba(6, 13, 18, 0.94);
+  box-shadow: 0 10px 26px rgba(0, 0, 0, 0.45);
+  font-family: var(--serif);
+  color: var(--paper);
+}
+
+.map-picker.hidden { display: none; }
+
+.map-picker-title {
+  font-size: 13px;
+  letter-spacing: 1px;
+  color: var(--gold);
+  margin-bottom: 6px;
+}
+
+.map-picker input {
+  width: 100%;
+  padding: 6px 9px;
+  border-radius: 8px;
+  border: 1px solid rgba(232, 220, 195, 0.28);
+  background: rgba(8, 18, 23, 0.85);
+  color: var(--paper);
+  font-family: var(--serif);
+  font-size: 13px;
+}
+
+.map-picker-address {
+  margin: 6px 0 8px;
+  font-size: 11.5px;
+  line-height: 1.7;
+  color: rgba(232, 220, 195, 0.62);
+  word-break: break-all;
+}
+
+.map-picker-actions { display: flex; gap: 8px; }
+
+.map-picker-actions button {
+  flex: 1;
+  padding: 6px 10px;
+  border-radius: 8px;
+  border: 1px solid rgba(232, 220, 195, 0.24);
+  background: rgba(8, 18, 23, 0.7);
+  color: rgba(240, 232, 214, 0.92);
+  font-family: var(--serif);
+  font-size: 12.5px;
+  cursor: pointer;
+}
+
+.map-picker-actions button.primary {
+  border-color: rgba(242, 200, 121, 0.6);
+  background: rgba(242, 200, 121, 0.18);
+  color: var(--gold);
+}
+
+.panel-head-actions { display: flex; gap: 8px; align-items: center; }
+
+/* 抽屉内的新入口同样取消固定定位 */
+#drawer #guide-open {
+  position: static;
+  width: 100%;
+  margin: 0 0 8px;
+  z-index: auto;
+}
+
+@media (max-width: 980px) {
+  .guide-main { grid-template-columns: 1fr; }
+  .guide-detail { max-height: 42vh; }
+}

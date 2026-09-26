@@ -25,7 +25,9 @@ export function createUI({ cities, handlers = {} }) {
     element.innerHTML = `<span class="dot"></span><span class="name">${city.name}</span>`;
     element.addEventListener('click', (event) => {
       event.stopPropagation();
-      handlers.onCitySelect?.(city.slug);
+      // 统一走「单击看地标 / 双击进流程编辑」的判定（沙盘光点与这里共用一套逻辑）
+      if (handlers.onCityActivate) handlers.onCityActivate(city.slug, event);
+      else handlers.onCitySelect?.(city.slug);
     });
     element.addEventListener('pointerenter', () => handlers.onCityHover?.(city.slug));
     element.addEventListener('pointerleave', () => handlers.onCityHover?.(null));

@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>CulturalLeader · 文旅数字人讲台</title>
     <link rel="stylesheet" href="/css/stage.css" />
+    <link rel="stylesheet" href="/css/map_ui.css" />
     <script type="importmap">
       {
         "imports": {
@@ -33,7 +34,10 @@
           <h1 id="panel-name">城市</h1>
           <div class="panel-meta"><span id="panel-province"></span> <span id="panel-tags"></span></div>
         </div>
-        <button id="panel-close" class="ghost-btn" type="button">合拢幕布</button>
+        <div class="panel-head-actions">
+          <button id="panel-plan" class="ghost-btn" type="button" title="进入这座城市的流程编辑">规划这座城市</button>
+          <button id="panel-close" class="ghost-btn" type="button">合拢幕布</button>
+        </div>
       </header>
       <p id="panel-summary" class="panel-summary"></p>
       <div class="panel-narration">
@@ -74,26 +78,29 @@
         <button id="city-card-close" type="button">✕</button>
       </header>
       <div id="city-card-meta" class="muted"></div>
-      <button id="city-card-enter" type="button" class="primary">进入城市规划</button>
+      <button id="city-card-enter" type="button" class="primary">进入流程编辑</button>
     </div>
 
     <div id="planner" class="hidden">
       <header class="planner-head">
         <button id="planner-back" type="button">← 返回沙盘</button>
-        <strong id="planner-name">行程规划</strong>
+        <input id="planner-name" class="planner-title" type="text" value="游玩流程" title="流程名称（可改）" />
         <span id="planner-city" class="muted"></span>
         <span class="planner-spacer"></span>
-        <select id="planner-trip"></select>
-        <button id="planner-new" type="button">新建行程</button>
+        <select id="planner-flow" title="切换城市流程"></select>
+        <button id="planner-new" type="button">新建</button>
+        <button id="planner-copy" type="button">另存副本</button>
         <button id="planner-export" type="button">导出</button>
         <button id="planner-import" type="button">导入</button>
+        <button id="planner-delete" type="button">删除</button>
       </header>
-      <div id="planner-days" class="planner-days"></div>
+      <div class="planner-hint">
+        双击沙盘上的任意城市即可打开／切换该城市的流程；点位可长按拖拽调序，改完点「重新优化」由 LKH TSPTW 重排。
+      </div>
       <div class="planner-main">
         <aside class="planner-side">
           <div class="planner-row">
-            <label class="drawer-label" for="planner-city-select">当天城市</label>
-            <select id="planner-city-select"></select>
+            <span class="planner-note">这条流程属于上面这座城市；换城市请返回沙盘双击另一座城市。</span>
           </div>
           <div class="planner-row">
             <div class="seg" id="planner-mode">
@@ -114,12 +121,16 @@
           </div>
           <div class="planner-row">
             <input id="planner-start-name" type="text" placeholder="出发点名称（酒店/车站）" />
-            <button id="planner-set-start" type="button">设为出发点</button>
           </div>
+          <div class="planner-row">
+            <button id="planner-pick-start" type="button" class="primary">在地图上点选起点</button>
+            <button id="planner-set-start" type="button">用第一个点位</button>
+            <button id="planner-reset-start" type="button">回到城市中心</button>
+          </div>
+          <div class="planner-note" id="planner-start-info">出发点：—</div>
           <ol id="planner-stops" class="planner-stops"></ol>
           <div class="planner-row">
             <button id="planner-optimize" type="button" class="primary">重新优化</button>
-            <button id="planner-add-day" type="button">+ 增加一天</button>
           </div>
           <pre id="planner-plan" class="planner-plan"></pre>
         </aside>
@@ -129,6 +140,8 @@
             <input id="planner-search-input" type="search" placeholder="搜索地点，如：兵马俑" />
             <button id="planner-search-btn" type="button">搜索</button>
             <span id="planner-mapkind" class="muted"></span>
+            <span class="planner-map-tip">点地图任意位置即可加点</span>
+            <span class="planner-map-tip">点地图任意位置即可加点</span>
             <button id="planner-selftest" type="button">环境自检</button>
           </div>
           <div id="planner-buckets" class="planner-buckets"></div>
@@ -137,6 +150,36 @@
         </main>
       </div>
       <div id="planner-toast" class="planner-toast"></div>
+    </div>
+
+    <div id="guide" class="hidden">
+      <header class="planner-head">
+        <button id="guide-back" type="button">← 返回沙盘</button>
+        <input id="guide-name" class="planner-title" type="text" value="我的攻略" title="攻略名称（可改）" />
+        <span class="planner-spacer"></span>
+        <select id="guide-select" title="切换攻略"></select>
+        <button id="guide-new" type="button">新建</button>
+        <button id="guide-save" type="button">重新计算</button>
+        <button id="guide-export" type="button">导出 JSON</button>
+        <button id="guide-share" type="button">分享链接</button>
+        <button id="guide-speak" type="button">数字人播报</button>
+        <button id="guide-delete" type="button">删除</button>
+      </header>
+      <div class="planner-hint">
+        把多座城市的游玩流程按天组合成整体攻略：自动汇总总里程、总时长与每天结束时间，可调整顺序或替换某城流程。
+      </div>
+      <div class="guide-main">
+        <aside class="planner-side">
+          <div class="drawer-label">攻略逐日（可上移/下移/替换/删除）</div>
+          <ol id="guide-items" class="planner-stops"></ol>
+          <div class="drawer-label">流程库（点「加入下一天」）</div>
+          <div id="guide-library" class="guide-library"></div>
+        </aside>
+        <main class="planner-map guide-detail">
+          <pre id="guide-totals" class="planner-plan"></pre>
+        </main>
+      </div>
+      <div id="guide-toast" class="planner-toast"></div>
     </div>
 
     <button id="nav-toggle" class="nav-toggle" type="button">☰ 导航</button>
@@ -148,9 +191,11 @@
       </header>
 
       <section class="drawer-section">
-        <h4>行程</h4>
-        <button id="planner-open" class="drawer-btn primary" type="button">打开行程规划</button>
+        <h4>工具</h4>
+        <button id="guide-open" class="drawer-btn primary" type="button">我的攻略（多城市组合）</button>
+        <button id="planner-open" class="drawer-btn" type="button">流程编辑（当前城市）</button>
         <button id="route-btn" class="drawer-btn" type="button">路线规划（多城市巡游）</button>
+        <p class="drawer-note">双击沙盘上的任意城市 → 直接进入该城市的流程编辑；单击有 3D 建模的城市 → 看地标。</p>
       </section>
 
       <section class="drawer-section">
@@ -167,7 +212,7 @@
       </section>
 
       <section class="drawer-section">
-        <h4>显示与声音</h4>
+        <h4>显示与时间设置</h4>
         <label class="drawer-label" for="quality-select">画质</label>
         <select id="quality-select" title="画质">
           <option value="high">高（默认）</option>
@@ -175,10 +220,6 @@
           <option value="low">低（更流畅）</option>
         </select>
         <button id="mute-btn" class="drawer-btn" type="button">静音</button>
-      </section>
-
-      <section class="drawer-section">
-        <h4>时间与日照</h4>
         <div id="timeboard">
           <div class="tb-main">
             <div id="tb-icon" class="tb-icon">☀</div>
@@ -198,7 +239,7 @@
       <section class="drawer-section">
         <h4>操作说明</h4>
         <div id="hint">
-          拖动旋转 · 滚轮缩放（放大到省级会显示该省城市）· 右键平移 · 点击城市进入规划 · 点击省份可飞到该省
+          拖动旋转 · 滚轮缩放（放大到省级会显示该省城市）· 右键平移 · 双击城市进入流程编辑 · 单击重点城市看 3D · 点击省份飞到该省
         </div>
       </section>
     </aside>

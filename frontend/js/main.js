@@ -11,7 +11,9 @@ import { createMural } from './mural.js';
 import { createRoute } from './route.js';
 import { createCityLayer } from './map/city_layer.js';
 import { createProvinceLayer } from './map/province_layer.js';
-import { createTripPlanner } from './map/trip_planner.js';
+import { createFlowEditor } from './map/flow_editor.js';
+import { createGuideBuilder } from './map/guide_builder.js';
+import { cityCardMeta, findCity, loadCityIndex } from './map/city_index.js';
 import { applyLandmarkLighting, createLandmarkScene, landmarkFactory } from './landmarks.js';
 import { createFayHuman } from './fay/fay_live2d.js';
 import { VoiceIO } from './voice.js';
@@ -71,6 +73,9 @@ async function boot() {
   const response = await fetch('/api/cities');
   if (!response.ok) throw new Error('城市数据加载失败');
   const cities = await response.json();
+
+  // 统一城市索引：重点城市（有讲解与 3D 地标）+ 全国 300+ 地级市
+  const cityIndex = await loadCityIndex();
 
   const handlers = {};
   const ui = createUI({ cities, handlers });
@@ -169,14 +174,18 @@ async function boot() {
   const provinceLayer = createProvinceLayer({ scene, camera, controls });
   provinceLayer.onFly((position, target) => flyTo(position, target, STAGE.transitionMs));
 
-  // 行程工作台
-  const planner = createTripPlanner({
-    onSpeak: (text) => {
-      if (!text) return;
-      if (!muted) voice.enqueue(text);
-      ui.setSpeech(text, muted);
-    },
-  });
+  // 面板播报：数字人朗读 + 字幕
+  const narrate = (text) => {
+    if (!text) return;
+    if (!muted) voice.enqueue(text);
+    ui.setSpeech(text, muted);
+  };
+
+  // 城市游玩流程编辑器（双击城市进入）：真实可拖拽地图 + LKH TSPTW 重新优化
+  const planner = createFlowEditor({ onSpeak: narrate });
+
+  // 我的攻略：把多城流程组合成整体行程（总里程 / 总时长 / 逐日安排）
+  const guide = createGuideBuilder({ onSpeak: narrate });
 
   // 地标与内场灯光
   const landmark = createLandmarkScene();
@@ -329,11 +338,35 @@ async function boot() {
     }
   }
 
+  // 单击重点城市 → 3D 地标；双击任意城市 → 打开该城市的流程编辑器
+  // （单击动作延迟 340ms 再执行，用来区分双击）
+  // 注意：重点城市在沙盘上是 DOM 标签按钮（ui.js → onCityActivate），普通地级市走画布光点，两条路都汇到这里。
+  let pendingCityClick = null;
+  function handleCityActivate(city, event) {
+    if (!city) return;
+    const unified = findCity(cityIndex, city.name) || city;
+    if (pendingCityClick) {
+      window.clearTimeout(pendingCityClick.timer);
+      pendingCityClick = null;
+      document.getElementById('city-card')?.classList.add('hidden');
+      planner.open(unified);
+      return;
+    }
+    pendingCityClick = {
+      city: unified,
+      timer: window.setTimeout(() => {
+        pendingCityClick = null;
+        if (unified.landmark_key && unified.slug) openCity(unified.slug);
+        else showCityCard(unified);
+      }, 340),
+    };
+  }
+
   function showCityCard(city) {
     if (!city) return;
     const card = document.getElementById('city-card');
     document.getElementById('city-card-name').textContent = city.name;
-    document.getElementById('city-card-meta').textContent = `${city.province || ''} · ${city.tier === 'prefecture' ? '地级市' : '重点城市'}`;
+    document.getElementById('city-card-meta').textContent = cityCardMeta(city);
     card.classList.remove('hidden');
     card.__city = city;
   }
@@ -357,6 +390,16 @@ async function boot() {
       return;
     }
     openCity(slug);
+  };
+  // 城市标签（重点城市的 DOM 按钮）也走与沙盘光点相同的单击/双击判定
+  handlers.onCityActivate = (slug, event) => {
+    if (route?.active) {
+      route.toggle(slug);
+      return;
+    }
+    const seeded = cities.find((item) => item.slug === slug);
+    if (seeded) handleCityActivate(seeded, event);
+    else openCity(slug);
   };
   handlers.onCityHover = (slug) => {
     const index = slug ? cities.findIndex((city) => city.slug === slug) : -1;
@@ -432,11 +475,11 @@ async function boot() {
     }
     pointerDownAt = null;
 
-    // 1) 重点城市（带讲解）
+    // 1) 重点城市（带讲解）：单击看 3D 地标，双击进入流程编辑
     if (hoverIndex >= 0) {
-      const slug = cities[hoverIndex].slug;
-      if (route?.active) route.toggle(slug);
-      else openCity(slug);
+      const seeded = cities[hoverIndex];
+      if (route?.active) route.toggle(seeded.slug);
+      else handleCityActivate(seeded, event);
       return;
     }
 
@@ -452,7 +495,7 @@ async function boot() {
       }
     });
     if (layerHit >= 0) {
-      showCityCard(cityLayer.cities[layerHit]);
+      handleCityActivate(cityLayer.cities[layerHit], event);
       return;
     }
 
@@ -495,6 +538,8 @@ async function boot() {
   function toggleDrawer(open) {
     drawer.classList.toggle('open', open);
     drawerBackdrop.classList.toggle('show', open);
+    // 抽屉打开时把「☰ 导航」按钮收起来，关掉抽屉再出现（避免按钮压在抽屉上）
+    document.body.classList.toggle('drawer-open', open);
   }
 
   document.getElementById('nav-toggle')?.addEventListener('click', () => {
@@ -502,6 +547,12 @@ async function boot() {
   });
   document.getElementById('drawer-close')?.addEventListener('click', () => toggleDrawer(false));
   drawerBackdrop?.addEventListener('click', () => toggleDrawer(false));
+
+  // 我的攻略入口
+  document.getElementById('guide-open')?.addEventListener('click', () => {
+    toggleDrawer(false);
+    guide.open();
+  });
 
   // 省份选择：直接飞到指定省份（下拉 + 按钮）
   const provinceSelect = document.getElementById('province-select');
@@ -566,6 +617,13 @@ async function boot() {
   });
 
   // 城市卡片按钮
+  document.getElementById('panel-plan')?.addEventListener('click', () => {
+    if (!activeCity) return;
+    const unified = findCity(cityIndex, activeCity.name) || activeCity;
+    closeCity();
+    planner.open(unified);
+  });
+
   document.getElementById('city-card-close')?.addEventListener('click', () => {
     document.getElementById('city-card').classList.add('hidden');
   });
@@ -804,6 +862,21 @@ async function boot() {
     plannerOpen: (city) => planner.open(city),
     plannerClose: () => planner.close(),
     plannerReload: () => planner.reload(),
+    plannerDebug: () => planner.debug(),
+    plannerFit: () => planner.fit(),
+    plannerMap: () => planner.mapInstance(),
+    guide: () => ({ open: guide.isOpen() }),
+    guideOpen: () => guide.open(),
+    guideClose: () => guide.close(),
+    guideReload: () => guide.reload(),
+    cityIndex: () =>
+      cityIndex.map((city) => ({
+        name: city.name,
+        shortName: city.shortName,
+        adcode: city.adcode,
+        tier: city.tier,
+        landmark_key: city.landmark_key,
+      })),
     cityLayer: () => ({
       level: cityLayer.state.level,
       visible: cityLayer.state.visibleCount,
@@ -812,6 +885,16 @@ async function boot() {
       viewKm: cityLayer.state.viewKm || 0,
     }),
     focusCity: (name) => focusCityByName(name),
+    /** 城市光点在屏幕上的真实位置（与点击命中判定同源，自动化验收用）。 */
+    cityScreen: (name) => {
+      const wanted = String(name || '').replace(/市$/, '');
+      const positions = cityLayer.screenPositions(camera, window.innerWidth, window.innerHeight);
+      const hit = positions.find((position) => {
+        const city = cityLayer.cities[position.index];
+        return position.visible && city && String(city.name).replace(/市$/, '') === wanted;
+      });
+      return hit ? { x: hit.x, y: hit.y, name: cityLayer.cities[hit.index].name } : null;
+    },
     province: () => ({
       visible: provinceLayer.state.visible,
       opacity: Number((provinceLayer.state.opacity || 0).toFixed(2)),

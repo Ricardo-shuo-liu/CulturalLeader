@@ -9,7 +9,7 @@ from fastapi.staticfiles import StaticFiles
 
 from .config import FRONTEND_DIR
 from .db import init_db
-from .routers import admin, chat, cities, geo, route, system, trips
+from .routers import admin, chat, cities, flows, geo, guides, route, system, trips
 
 
 @asynccontextmanager
@@ -32,6 +32,8 @@ app.include_router(cities.router)
 app.include_router(chat.router)
 app.include_router(route.router)
 app.include_router(trips.router)
+app.include_router(flows.router)
+app.include_router(guides.router)
 app.include_router(geo.router)
 app.include_router(admin.router)
 
@@ -49,3 +51,9 @@ def index() -> FileResponse:
 @app.get("/admin", include_in_schema=False)
 def admin_page() -> FileResponse:
     return FileResponse(FRONTEND_DIR / "admin.html")
+
+
+@app.get("/share/{token}", include_in_schema=False)
+def share_page(token: str) -> FileResponse:
+    """只读分享页：内容由 /api/guides/shared/{token} 提供，页面本身不含隐私数据。"""
+    return FileResponse(FRONTEND_DIR / "share.html")

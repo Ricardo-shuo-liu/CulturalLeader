@@ -231,6 +231,30 @@ def poi_around(lng: float, lat: float, bucket: str = "", radius: int = 2000) -> 
     return {"bucket": name, "keywords": spec["keywords"], "count": len(items), "items": items[:20]}
 
 
+@router.get("/poi/reverse")
+def poi_reverse(lng: float, lat: float) -> dict:
+    """地图取点：给任意坐标配一个可读名字。
+
+    这条接口永不失败：没有 Key、超配额或上游异常时返回「地图取点 + 坐标」并标记 estimated，
+    保证用户在地图上随手点一个位置也能加点位。
+    """
+    try:
+        return _client().reverse_geocode(lng, lat)
+    except MapError as error:
+        return {
+            "name": "地图取点",
+            "address": f"{lat:.5f}, {lng:.5f}",
+            "city": "",
+            "district": "",
+            "adcode": "",
+            "lng": lng,
+            "lat": lat,
+            "poi_id": "",
+            "estimated": True,
+            "hint": str(error),
+        }
+
+
 @router.get("/poi/{poi_id}")
 def poi_detail(poi_id: str) -> dict:
     try:

@@ -16,7 +16,7 @@ echo "== 前端逻辑校验 =="
 "$NODE" --import ./tools/node-three-register.mjs tools/check_frontend.mjs
 
 echo "== 前端语法检查 =="
-for file in frontend/js/*.js frontend/js/data/*.js; do
+for file in frontend/js/*.js frontend/js/map/*.js frontend/js/data/*.js; do
   cp "$file" /tmp/cl_check.mjs
   "$NODE" --check /tmp/cl_check.mjs
 done

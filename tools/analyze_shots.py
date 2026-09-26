@@ -108,7 +108,9 @@ def main() -> int:
     route_image = Image.open(OUT / "06_route.png").convert("RGB")
     rw, rh = route_image.size
     route_crop = route_image.crop((int(rw * 0.1), int(rh * 0.2), int(rw * 0.9), int(rh * 0.95)))
-    route_values = list(route_crop.resize((240, 150)).getdata())
+    # 注意：航线是细线，缩得太狠会被重采样抹平（1600x900 的截图缩到 240x150 只剩几十像素），
+    # 这里用 480x300 采样，既能滤掉噪点又能真实反映航线是否存在。
+    route_values = list(route_crop.resize((480, 300)).getdata())
     gold_pixels = sum(1 for r, g, b in route_values if r > 120 and r - b > 35 and g > 90)
     print(f"路线金色像素：{gold_pixels}")
     if gold_pixels < 120:

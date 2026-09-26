@@ -36,6 +36,8 @@ class Settings(BaseSettings):
     map_daily_limit: int = 5000
     allow_estimate: bool = True
     trips_dir: str = str(DATA_DIR / "trips")
+    flows_dir: str = str(DATA_DIR / "flows")
+    guides_dir: str = str(DATA_DIR / "guides")
 
     @property
     def map_ready(self) -> bool:

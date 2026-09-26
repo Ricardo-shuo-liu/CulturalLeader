@@ -173,7 +173,9 @@ def main() -> int:
         driver.execute_script(
             "document.getElementById('drawer').classList.remove('open');"
             "document.getElementById('drawer-backdrop').classList.remove('show');"
+            "document.body.classList.remove('drawer-open');"
         )
+        time.sleep(0.4)  # 等导航按钮的收起动画走完再点它
         time.sleep(0.5)
         drawer_probe = {
             'closed_at_start': driver.execute_script("return !document.getElementById('drawer').classList.contains('open')"),

@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>只读分享 · 我的攻略 · CulturalLeader</title>
+    <style>
+      :root {
+        --ink: #08131a;
+        --paper: #f0e8d6;
+        --gold: #f2c879;
+        --jade: #7fd3e0;
+      }
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        min-height: 100vh;
+        background: radial-gradient(circle at 20% 0%, #12242e, #05090c 70%);
+        color: var(--paper);
+        font-family: "Noto Serif SC", "Songti SC", serif;
+        padding: 36px 22px 64px;
+      }
+      header { max-width: 980px; margin: 0 auto 22px; }
+      h1 { margin: 0 0 6px; font-size: 26px; letter-spacing: 2px; }
+      .meta { color: rgba(240, 232, 214, 0.62); font-size: 13.5px; }
+      main { max-width: 980px; margin: 0 auto; display: flex; flex-direction: column; gap: 14px; }
+      .day {
+        border: 1px solid rgba(240, 232, 214, 0.16);
+        border-left: 4px solid var(--gold);
+        border-radius: 12px;
+        padding: 14px 16px;
+        background: rgba(8, 19, 26, 0.72);
+      }
+      .day h2 { margin: 0 0 6px; font-size: 16px; letter-spacing: 1px; }
+      .day .city { color: var(--gold); }
+      .day ul { margin: 8px 0 0; padding-left: 20px; line-height: 2; font-size: 13.5px; }
+      .day small { display: block; margin-top: 8px; color: rgba(240, 232, 214, 0.6); }
+      .legend { margin-top: 26px; color: rgba(240, 232, 214, 0.55); font-size: 12.5px; text-align: center; }
+      .empty { color: rgba(240, 232, 214, 0.7); }
+      a { color: var(--jade); }
+    </style>
+  </head>
+  <body>
+    <header>
+      <h1 id="title">只读分享</h1>
+      <div class="meta" id="meta">正在载入攻略…</div>
+    </header>
+    <main id="content"></main>
+    <div class="legend">本页为只读分享：内容来自本机 CulturalLeader 的攻略数据，可在「我的攻略」里随时更新或失效。</div>
+    <script type="module" src="/js/share.js"></script>
+  </body>
+</html>

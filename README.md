@@ -92,19 +92,21 @@ frontend/assets/live2d  Live2D 模型与 config.json
 docs/              文档（含 Live2D 接入说明）
 THIRD_PARTY_LICENSES.md  第三方组件与许可
 frontend/vendor    本地 ESM 依赖（tools/vendor_frontend.py 生成，离线可用）
-tools              依赖抓取、轮廓数据、各类校验脚本
+tools              依赖抓取、轮廓数据、旧数据迁移、各类校验脚本
 ```
 
 ## 校验
 
 ```bash
-./tools/check_all.sh                                    # 后端 24 项 + 前端 17 项 + 语法
+./tools/check_all.sh                                    # 后端 31 项 + 前端 22 项 + 全部 JS 语法
 python tools/check_live2d_model.py                      # Live2D 模型是否满足接入要求
 python tools/fetch_cities_cn.py                         # 重新生成全国城市清单（可选）
 python tools/check_map.py                               # 腾讯位置服务 Key 自检（类型/配额/接口可用性）
+python tools/migrate_trips.py --dry-run                 # 旧行程 → 城市流程 + 整体攻略（幂等，可演练）
 ./run.sh &                                              # 另开一个终端
-python tools/browser_check.py                           # 沙盘/数字人/路线端到端
-python tools/browser_check_planner.py                   # 行程工作台端到端
+python tools/browser_check.py                           # 沙盘/数字人/路线/省份点击端到端
+python tools/browser_check_flows.py                     # 双击城市→流程编辑→优化→攻略→分享页（含无 Key 降级路径）
+python tools/browser_check_planner.py                   # 兼容入口，转发到上面这个脚本
 python tools/analyze_shots.py                           # 截图像素统计
 ```
 
@@ -121,19 +123,24 @@ Node 未安装时可用便携版：`.tools/node/bin/node`（`check_all.sh` 会�
 `SpeechSynthesis`，语音识别走浏览器 `SpeechRecognition`（不可用时退回文字输入）。
 配置 `.env` 后即可切换到真实大模型与语音。
 
-## 行程路径规划（沙盘 + 腾讯位置服务 + LKH-TSPTW）
+## 城市流程与整体攻略（沙盘 + 腾讯地图 + LKH-TSPTW）
 
-左上角「☰ 导航」打开侧边抽屉，功能都在里面；沙盘按时视野自动切换标注——全国尺度只显示
-**重点城市**（约 33 个），缩进到**省级范围会自动显示该省的城市**（例：飞入洛阳后显示 17 城并带名字）。
-点城市进入行程工作台：用**腾讯位置服务**的真实地图与通勤时长逐日编排，
-LKH-3.0.14 的 TSPTW 按开放时间与固定预约做单日最优排序，支持地图长按拖拽调序、
-附近餐厅与小店推荐、按天配色 polyline、导出导入 JSON。
-只有腾讯 WebServiceAPI Key 也能完整使用：后端算真实通勤时长，城内地图用**离线矢量底图**
-（区县边界 + 滚轮缩放 + 拖拽平移 + 里程标注）。没有 Key 时降级为直线估算并标注。
+**双击沙盘上的任意城市** → 进入这座城市的**游玩流程编辑**：真实可拖拽、滚轮缩放、双击放大的
+腾讯 GL 地图，左侧编排点位（搜索 POI、附近推荐、停留时长、固定预约、锁定、步行/打车/公交），
+「重新优化」由 **LKH-3.0.14 TSPTW** 按营业时间与真实通勤时长求最优顺序，支持长按拖拽调序。
+
+**单击有 3D 建模的城市**（北京/上海/广州/西安/成都）看地标与讲解，**单击其他城市**出浮动卡片。
+把多座城市的流程在「☰ 导航 → 我的攻略」里逐天组合，就是一份**整体攻略**：
+自动汇总总里程/总时长/每日结束时间与城际段，可调序、替换某城流程、导出 JSON，
+并生成**只读分享页** `/share/<token>`。
 
 - 使用与配置：[docs/行程路径规划使用说明.md](docs/行程路径规划使用说明.md)
-- 后端：`backend/app/services/tencent_map.py`（缓存/限流/配额/降级）、`trip_optimizer.py`（TSPTW）、`trip_store.py`（本地 JSON）
-- 接口：`/api/geo/cities`、`/api/trips*`、`/api/poi/*`、`/api/map/status|selftest`、`/api/config`
+- 后端：`backend/app/services/tencent_map.py`（缓存/限流/配额/降级）、`trip_optimizer.py`（TSPTW）、
+  `flow_store.py`（城市流程）、`guide_store.py` + `guide_builder.py`（整体攻略）
+- 接口：`/api/flows*`、`/api/guides*`、`/api/geo/cities|provinces|city-boundary`、`/api/poi/*`、`/api/map/status|selftest`、`/api/config`
+- 只有 WebServiceAPI Key 也能完整使用：底图自动降级为自建矢量底图（同一套 Web Mercator 投影，
+  拖拽/缩放/比例尺/指北针齐全）；没有 Key 时通勤时长降级为直线估算并标注「估算」。
+  排障可强制走降级底图：`http://127.0.0.1:8000/?map=canvas`
 
 ## 数字人（Live2D，迁移自 Fay）
 
