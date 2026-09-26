@@ -69,8 +69,8 @@ const FRAGMENT_SHADER = /* glsl */ `
     float localNight = smoothstep(3.0, -8.0, localAltitude);
     float twilight = smoothstep(-10.0, -1.0, localAltitude) * (1.0 - smoothstep(0.0, 7.0, localAltitude));
 
-    float silk = fbm(vLocalUv * vec2(6.0, 3.2) + vec2(uTime * 0.012, 0.0), 4);
-    float fine = fbm(vLocalUv * vec2(30.0, 18.0), 3);
+    float silk = fbm(vLocalUv * vec2(6.0, 3.2) + vec2(uTime * 0.012, 0.0), 3);
+    float fine = fbm(vLocalUv * vec2(30.0, 18.0), 2);
 
     vec3 dayColor = mix(uInkDeep, uInkBase, silk * 0.6 + 0.3);
     dayColor += uMountain * (0.14 + 0.1 * fine);

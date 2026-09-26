@@ -245,7 +245,7 @@ const TERRAIN_FRAGMENT = /* glsl */ `
     vec3 base = mix(uLand, uLandHigh, smoothstep(0.05, 0.75, heightRatio));
     base = mix(base, uRidge, smoothstep(0.45, 1.0, heightRatio));
 
-    float ink = fbm(vUv * vec2(26.0, 15.0), 4);
+    float ink = fbm(vUv * vec2(26.0, 15.0), 3);
     vec3 color = base * (uAmbientColor * (uAmbientIntensity * 1.75) + tint * intensity * (0.5 + 0.9 * lambert));
     color *= 0.9 + 0.25 * ink;
     color += uPaper * sky * intensity * 0.05 * (0.4 + heightRatio);
@@ -437,8 +437,8 @@ const GROUND_FRAGMENT = /* glsl */ `
     float r = length(vec2(vPlane.x / 6.4, vPlane.y / 4.4));
     float pool = smoothstep(1.05, 0.05, r);
     vec2 cloudUv = vPlane * 0.16;
-    float clouds = fbm(cloudUv + vec2(uTime * 0.004, 0.0), 4);
-    float fine = fbm(cloudUv * 3.6, 3);
+    float clouds = fbm(cloudUv + vec2(uTime * 0.004, 0.0), 3);
+    float fine = fbm(cloudUv * 3.6, 2);
 
     float lng = clamp(uLngAtZero + vWorldX * uLngPerX, 60.0, 150.0);
     float alt = sunAltitudeAt(lng, 35.0);

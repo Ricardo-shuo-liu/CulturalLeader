@@ -73,3 +73,24 @@ class Message(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=func.now())
 
     session: Mapped[ChatSession] = relationship(back_populates="messages")
+
+
+class MapCache(Base):
+    """地图接口响应缓存（腾讯位置服务）：key 为 path+参数指纹。"""
+
+    __tablename__ = "map_cache"
+
+    key: Mapped[str] = mapped_column(String(200), primary_key=True)
+    path: Mapped[str] = mapped_column(String(120), default="")
+    payload: Mapped[str] = mapped_column(Text, default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=func.now())
+
+
+class MapQuota(Base):
+    """地图服务每日调用计数。"""
+
+    __tablename__ = "map_quota"
+
+    day: Mapped[str] = mapped_column(String(10), primary_key=True)
+    count: Mapped[int] = mapped_column(Integer, default=0)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=func.now(), onupdate=func.now())

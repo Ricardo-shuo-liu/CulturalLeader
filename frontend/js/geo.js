@@ -54,6 +54,25 @@ export function lngLatRange() {
   return { lng: LNG_RANGE, lat: LAT_RANGE };
 }
 
+/** 场景坐标 → 经纬度（Albers 逆投影，用于判断当前视野落在哪个省）。 */
+export function unprojectScene(x, y) {
+  const rawX = x / SCALE + centerX;
+  const rawY = y / SCALE + centerY;
+  const rho = Math.sign(N) * Math.hypot(rawX, RHO0 - rawY);
+  const theta = Math.atan2(rawX, RHO0 - rawY);
+  const lng = (LAMBDA0 + theta / N) * (180 / Math.PI);
+  const lat = Math.asin(Math.max(-1, Math.min(1, (C - (rho * N) ** 2) / (2 * N)))) * (180 / Math.PI);
+  return { lng, lat };
+}
+
+/** 每场景单位对应的公里数（用北京—上海实际距离自校准）。 */
+export const KM_PER_UNIT = (() => {
+  const a = project(116.4074, 39.9042);
+  const b = project(121.4737, 31.2304);
+  const units = Math.hypot(b.x - a.x, b.y - a.y);
+  return units > 0 ? 1067.3 / units : 1200;
+})();
+
 /** 场景坐标 → 纱幕/幕布的 UV（用于对齐水墨晕染贴图）。 */
 export function toUv(x, y) {
   return { u: x / STAGE.width + 0.5, v: y / STAGE.height + 0.5 };

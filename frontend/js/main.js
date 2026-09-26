@@ -4,16 +4,19 @@ import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { BACKDROP, PALETTE, STAGE } from './config.js';
 import { createBackdrop } from './curtain.js';
-import { buildBorders, buildGround, buildSky, buildTerrain, createDust, worldPosition } from './terrain.js';
+import { buildBorders, buildGround, buildSky, buildTerrain, createDust, heightAt, worldPosition } from './terrain.js';
 import { applySolarUniforms } from './lighting.js';
 import { createCityPoints } from './citypoints.js';
 import { createMural } from './mural.js';
 import { createRoute } from './route.js';
+import { createCityLayer } from './map/city_layer.js';
+import { createProvinceLayer } from './map/province_layer.js';
+import { createTripPlanner } from './map/trip_planner.js';
 import { applyLandmarkLighting, createLandmarkScene, landmarkFactory } from './landmarks.js';
-import { createAvatar } from './avatar.js';
+import { createFayHuman } from './fay/fay_live2d.js';
 import { VoiceIO } from './voice.js';
 import { createUI } from './ui.js';
-import { LNG_AT_ZERO, LNG_PER_X } from './geo.js';
+import { KM_PER_UNIT, LNG_AT_ZERO, LNG_PER_X, unprojectScene } from './geo.js';
 import { CHINA_OUTLINE } from './data/china-outline.js';
 import { RANGES } from './data/ranges.js';
 import { sampleLighting, smoothstep, sunAltitudeAt, utcHours } from './solar.js';
@@ -154,6 +157,27 @@ async function boot() {
   cityPoints.mesh.renderOrder = 2;
   scene.add(cityPoints.mesh);
 
+  // 全国地级市标注（排除已有讲解的 5 座重点城市）
+  const cityLayer = createCityLayer({
+    scene,
+    terrainHeight: (lng, lat) => heightAt(lng, lat, RANGES),
+    exclude: new Set(cities.map((city) => city.name)),
+  });
+  cityLayer.setOpacity(0.9);
+
+  // 省级图层：省界 + 省会标签 + 飞到指定省份
+  const provinceLayer = createProvinceLayer({ scene, camera, controls });
+  provinceLayer.onFly((position, target) => flyTo(position, target, STAGE.transitionMs));
+
+  // 行程工作台
+  const planner = createTripPlanner({
+    onSpeak: (text) => {
+      if (!text) return;
+      if (!muted) voice.enqueue(text);
+      ui.setSpeech(text, muted);
+    },
+  });
+
   // 地标与内场灯光
   const landmark = createLandmarkScene();
   scene.add(landmark.root);
@@ -182,7 +206,12 @@ async function boot() {
   }
 
   // 数字人与语音
-  const avatar = await createAvatar(document.getElementById('avatar-canvas'));
+  // 数字人：Fay 风格 Live2D（模型与配置见 frontend/assets/live2d/）
+  const human = await createFayHuman({
+    canvas: document.getElementById('live2d-canvas'),
+    container: document.getElementById('live2d-stage'),
+    announce: (message) => ui.toast(message),
+  });
 
   let muted = false;
   let sessionId = null;
@@ -203,7 +232,7 @@ async function boot() {
     },
     onSpeakStart: (text) => ui.setSpeech(text, muted),
     onIdle: () => {
-      avatar.setSpeaking(false);
+      human.setSpeaking(false);
       ui.setSpeech(null);
     },
     onRecognized: (text) => {
@@ -212,6 +241,7 @@ async function boot() {
       askCity(text);
     },
     onRecognizeError: (message) => ui.toast(message),
+    onHuman: (message) => human.playAction(message?.Data?.Action),
   });
 
   function speak(text) {
@@ -299,6 +329,15 @@ async function boot() {
     }
   }
 
+  function showCityCard(city) {
+    if (!city) return;
+    const card = document.getElementById('city-card');
+    document.getElementById('city-card-name').textContent = city.name;
+    document.getElementById('city-card-meta').textContent = `${city.province || ''} · ${city.tier === 'prefecture' ? '地级市' : '重点城市'}`;
+    card.classList.remove('hidden');
+    card.__city = city;
+  }
+
   function closeCity() {
     activeCity = null;
     sessionId = null;
@@ -352,14 +391,12 @@ async function boot() {
     ui.setMuted(muted);
   });
 
-  if (!avatar.hasVrm) {
-    ui.toast('未找到 VRM 形象，已使用程序化水墨绢人（放入 frontend/assets/avatar.vrm 可替换）');
-  }
-
   // 交互：光点悬停与点选
   let hoverIndex = -1;
 
   renderer.domElement.addEventListener('pointermove', (event) => {
+    // 让数字人的视线跟随鼠标（Fay 规范：ParamEyeBallX/Y + 头部角度）
+    human.focus(event.clientX, window.innerHeight - event.clientY);
     const positions = cityPoints.screenPositions(camera, window.innerWidth, window.innerHeight);
     let hover = -1;
     let best = STAGE.cityHoverPx;
@@ -380,12 +417,60 @@ async function boot() {
   renderer.domElement.addEventListener('pointerdown', () => {
     renderer.domElement.style.cursor = 'grabbing';
   });
+  let pointerDownAt = null;
+  renderer.domElement.addEventListener('pointerdown', (event) => {
+    pointerDownAt = { x: event.clientX, y: event.clientY };
+  });
+
   renderer.domElement.addEventListener('pointerup', (event) => {
     renderer.domElement.style.cursor = hoverIndex >= 0 ? 'pointer' : 'grab';
-    if (hoverIndex >= 0 && event.button === 0) {
+    if (event.button !== 0) return;
+    // 拖拽旋转视角后不应触发点击
+    if (pointerDownAt && Math.hypot(event.clientX - pointerDownAt.x, event.clientY - pointerDownAt.y) > 6) {
+      pointerDownAt = null;
+      return;
+    }
+    pointerDownAt = null;
+
+    // 1) 重点城市（带讲解）
+    if (hoverIndex >= 0) {
       const slug = cities[hoverIndex].slug;
       if (route?.active) route.toggle(slug);
       else openCity(slug);
+      return;
+    }
+
+    // 2) 普通地级市 → 城市卡片
+    const layerPositions = cityLayer.screenPositions(camera, window.innerWidth, window.innerHeight);
+    let layerHit = -1;
+    let best = 20;
+    layerPositions.forEach((position) => {
+      const distance = Math.hypot(position.x - event.clientX, position.y - event.clientY);
+      if (position.visible && distance < best) {
+        best = distance;
+        layerHit = position.index;
+      }
+    });
+    if (layerHit >= 0) {
+      showCityCard(cityLayer.cities[layerHit]);
+      return;
+    }
+
+    // 3) 点击省份区块 → 飞到该省（放大后可继续看该省城市）
+    const ndc = new THREE.Vector2(
+      (event.clientX / window.innerWidth) * 2 - 1,
+      -(event.clientY / window.innerHeight) * 2 + 1,
+    );
+    const raycaster = new THREE.Raycaster();
+    raycaster.setFromCamera(ndc, camera);
+    const plane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
+    const point = new THREE.Vector3();
+    if (!raycaster.ray.intersectPlane(plane, point)) return;
+    const geo = unprojectScene(point.x, -point.z);
+    const province = provinceLayer.provinceAt(geo.lng, geo.lat);
+    if (province) {
+      provinceLayer.flyToProvince(province);
+      ui.toast(`${province.name} · 已飞入该省，继续放大看该省城市`);
     }
   });
 
@@ -397,19 +482,176 @@ async function boot() {
     camera.updateProjectionMatrix();
     borderGlow.material.resolution.set(width, height);
     borderMain.material.resolution.set(width, height);
-    avatar.resize(
+    human.resize(
       Math.round(Math.min(440, Math.max(220, width * 0.3))),
       Math.round(Math.min(600, Math.max(300, height * 0.74))),
     );
   }
 
+  // ── 导航抽屉开关 ──
+  const drawer = document.getElementById('drawer');
+  const drawerBackdrop = document.getElementById('drawer-backdrop');
+
+  function toggleDrawer(open) {
+    drawer.classList.toggle('open', open);
+    drawerBackdrop.classList.toggle('show', open);
+  }
+
+  document.getElementById('nav-toggle')?.addEventListener('click', () => {
+    toggleDrawer(!drawer.classList.contains('open'));
+  });
+  document.getElementById('drawer-close')?.addEventListener('click', () => toggleDrawer(false));
+  drawerBackdrop?.addEventListener('click', () => toggleDrawer(false));
+
+  // 省份选择：直接飞到指定省份（下拉 + 按钮）
+  const provinceSelect = document.getElementById('province-select');
+  if (provinceSelect) {
+    provinceLayer.provinces
+      .slice()
+      .sort((a, b) => a.name.localeCompare(b.name, 'zh-Hans-CN'))
+      .forEach((province) => {
+        const option = document.createElement('option');
+        option.value = province.adcode;
+        option.textContent = province.name;
+        provinceSelect.appendChild(option);
+      });
+    document.getElementById('province-go')?.addEventListener('click', () => {
+      const province = provinceLayer.provinces.find((item) => item.adcode === provinceSelect.value);
+      if (!province) {
+        ui.toast('先在列表里选一个省份');
+        return;
+      }
+      provinceLayer.flyToProvince(province);
+      ui.toast(`已飞到 ${province.name}`);
+      toggleDrawer(false);
+    });
+  }
+
+  // 行程规划入口（用城市卡片里选过的城市，否则用北京）
+  document.getElementById('planner-open')?.addEventListener('click', () => {
+    const card = document.getElementById('city-card');
+    const city = card?.__city || cities[0];
+    toggleDrawer(false);
+    planner.open(city);
+  });
+
+  // 城市搜索：回车定位到该城市（放大到省级尺度后会自动显示该省的城市）
+  function focusCityByName(name) {
+    const city = cityLayer.search(name);
+    if (!city) {
+      ui.toast('没有找到该城市，试试“西安”或“洛阳”');
+      return null;
+    }
+    const target = worldPosition(city.lng, city.lat, RANGES, 0);
+    cityLayer.setHighlight(cityLayer.cities.findIndex((item) => item.name === city.name));
+    ui.toast(`${city.name} · ${city.province || ''}`);
+    // 飞到"省级视野"：按目标视野宽度（约 550 公里）反推相机距离
+    const fovRad = (camera.fov * Math.PI) / 180;
+    const targetUnits = 550 / KM_PER_UNIT;
+    const distance = Math.max(
+      STAGE.camera.minDistance,
+      targetUnits / (2 * Math.tan(fovRad / 2) * Math.max(camera.aspect, 0.5)),
+    );
+    const direction = camera.position.clone().sub(controls.target).normalize();
+    const position = target.clone().add(direction.multiplyScalar(distance));
+    position.y = Math.max(position.y, target.y + distance * 0.45);
+    flyTo(position, target, STAGE.transitionMs);
+    return city.name;
+  }
+
+  const searchInput = document.getElementById('city-search');
+  searchInput?.addEventListener('keydown', (event) => {
+    if (event.key !== 'Enter') return;
+    focusCityByName(searchInput.value);
+  });
+
+  // 城市卡片按钮
+  document.getElementById('city-card-close')?.addEventListener('click', () => {
+    document.getElementById('city-card').classList.add('hidden');
+  });
+  document.getElementById('city-card-enter')?.addEventListener('click', () => {
+    const card = document.getElementById('city-card');
+    const city = card.__city;
+    card.classList.add('hidden');
+    if (city) planner.open(city);
+  });
+
   window.addEventListener('resize', resize);
   resize();
 
+  // 画质开关（记住上次选择）
+  document.getElementById('quality-select')?.addEventListener('change', (event) => {
+    applyQuality(event.target.value);
+    ui.toast(`画质已切换为${event.target.selectedOptions[0]?.textContent?.replace('画质：', '') || event.target.value}`);
+  });
+
   let lastTime = performance.now();
+  const perf = { samples: [], quality: 0, slowSeconds: 0, fastSeconds: 0 };
+
+  // 画质预设：手动选择后不再自动降级（自动降级只作用于"高"档）
+  const QUALITY_PRESETS = {
+    high: { pixelRatio: Math.min(window.devicePixelRatio || 1, STAGE.maxPixelRatio), particles: true },
+    medium: { pixelRatio: 1.25, particles: true },
+    low: { pixelRatio: 1, particles: false },
+  };
+  let qualityLevel = localStorage.getItem('cl-quality') || 'high';
+
+  applyQualityInitial(qualityLevel);
+
+  function applyQualityInitial(level) {
+    const preset = QUALITY_PRESETS[level] || QUALITY_PRESETS.high;
+    renderer.setPixelRatio(preset.pixelRatio);
+    dust.points.visible = preset.particles;
+    const select = document.getElementById('quality-select');
+    if (select) select.value = level;
+  }
+
+  function applyQuality(level) {
+    const preset = QUALITY_PRESETS[level] || QUALITY_PRESETS.high;
+    qualityLevel = level;
+    perf.quality = 0;
+    perf.slowSeconds = 0;
+    renderer.setPixelRatio(preset.pixelRatio);
+    dust.points.visible = preset.particles;
+    localStorage.setItem('cl-quality', level);
+    const select = document.getElementById('quality-select');
+    if (select && select.value !== level) select.value = level;
+  }
+
+  /** 自适应画质：持续掉帧时先降像素比，再关掉尘埃粒子（保证交互流畅）。 */
+  function applyAdaptiveQuality(delta) {
+    const list = perf.samples.slice(-60);
+    if (list.length < 45) return;
+    const avg = list.reduce((sum, value) => sum + value, 0) / list.length;
+    const fps = 1000 / Math.max(avg, 0.001);
+    if (fps < 42) {
+      perf.slowSeconds += delta;
+      perf.fastSeconds = 0;
+    } else if (fps > 55) {
+      perf.fastSeconds += delta;
+      perf.slowSeconds = 0;
+    } else {
+      perf.slowSeconds = Math.max(0, perf.slowSeconds - delta * 0.5);
+      perf.fastSeconds = 0;
+    }
+    if (qualityLevel !== 'high') return; // 手动选了中/低画质就不再自动降级
+    if (perf.slowSeconds > 2 && perf.quality < 2) {
+      perf.quality += 1;
+      perf.slowSeconds = 0;
+      if (perf.quality === 1) {
+        renderer.setPixelRatio(1);
+      } else {
+        dust.points.visible = false;
+        dust.points.visible = false;
+      }
+      console.warn(`[stage] 帧率偏低，自适应画质降到第 ${perf.quality} 级`);
+    }
+  }
 
   function frame(now) {
     const delta = Math.min(0.05, (now - lastTime) / 1000);
+    perf.samples.push(delta * 1000);
+    if (perf.samples.length > 120) perf.samples.shift();
     lastTime = now;
     const date = sceneDate();
     const state = sampleLighting(date);
@@ -466,13 +708,25 @@ async function boot() {
 
     route?.update(delta);
 
-    avatar.setEnergy(muted ? 0 : voice.level());
-    avatar.setSpeaking(!muted && voice.speaking);
-    avatar.setNight(state.nightFactor);
-    avatar.update(delta);
+    cityLayer.setOpacity(planner.isOpen() ? 0 : 0.9);
+    // 光点在屏幕上的大小基本恒定：相机拉近时按比例缩小，避免加色光斑铺满屏幕
+    const cameraDistance = camera.position.length();
+    cityLayer.setScale(Math.max(0.32, Math.min(1.15, cameraDistance / 6.4)));
+    cityLayer.update(camera, now / 1000, window.innerWidth, window.innerHeight);
+    cityLayer.updateLabels(cityLayer.screenPositions(camera, window.innerWidth, window.innerHeight), window.innerWidth, window.innerHeight);
+    provinceLayer.update(cityLayer.state.viewKm || Infinity);
+    perf.frame = (perf.frame || 0) + 1;
+    if (perf.frame % 8 === 0) {
+      provinceLayer.updateLabels(camera, window.innerWidth, window.innerHeight);
+    }
+    applyAdaptiveQuality(delta);
+
+    human.setEnergy(muted ? 0 : voice.level());
+    human.setSpeaking(!muted && voice.speaking);
+    human.setNight(state.nightFactor);
+    human.update(delta);
 
     renderer.render(scene, camera);
-    avatar.render();
 
     ui.updateLabels(cityPoints.screenPositions(camera, window.innerWidth, window.innerHeight));
     ui.updateTimeboard({
@@ -523,6 +777,54 @@ async function boot() {
   window.__cl = {
     openCity,
     closeCity,
+    human: () => ({
+      hasModel: human.hasModel,
+      ready: human.ready,
+      lipSyncParameter: human.config?.lipSync?.parameter || null,
+      idleGroup: human.config?.motions?.idle?.group || null,
+      speakGroup: human.config?.motions?.speak?.group || null,
+      runtimeLoaded: Boolean(window.PIXI?.live2d),
+      coreLoaded: Boolean(window.Live2DCubismCore),
+      notice: document.querySelector('.live2d-notice-title')?.textContent || '',
+    }),
+    humanProbe: () => human.debug?.() ?? null,
+    humanMeasure: () => human.measure?.() ?? null,
+    perf: () => {
+      const list = perf.samples.slice(-90).sort((a, b) => a - b);
+      if (!list.length) return null;
+      const avg = list.reduce((sum, value) => sum + value, 0) / list.length;
+      return {
+        fps: Math.round(1000 / Math.max(avg, 0.001)),
+        avgMs: Number(avg.toFixed(2)),
+        p95Ms: Number(list[Math.floor(list.length * 0.95) - 1]?.toFixed(2) || avg.toFixed(2)),
+        quality: perf.quality,
+      };
+    },
+    planner: () => ({ open: planner.isOpen() }),
+    plannerOpen: (city) => planner.open(city),
+    plannerClose: () => planner.close(),
+    plannerReload: () => planner.reload(),
+    cityLayer: () => ({
+      level: cityLayer.state.level,
+      visible: cityLayer.state.visibleCount,
+      labels: cityLayer.state.labelCount || 0,
+      total: cityLayer.cities.length,
+      viewKm: cityLayer.state.viewKm || 0,
+    }),
+    focusCity: (name) => focusCityByName(name),
+    province: () => ({
+      visible: provinceLayer.state.visible,
+      opacity: Number((provinceLayer.state.opacity || 0).toFixed(2)),
+      labels: provinceLayer.state.labelCount || 0,
+      total: provinceLayer.provinces.length,
+      viewKm: Math.round(cityLayer.state.viewKm || 0),
+    }),
+    flyProvince: (name) => {
+      const province = provinceLayer.provinces.find((item) => item.name.includes(name));
+      if (!province) return null;
+      provinceLayer.flyToProvince(province);
+      return province.name;
+    },
     route: () => ({
       active: route?.active || false,
       selected: route?.selected || [],

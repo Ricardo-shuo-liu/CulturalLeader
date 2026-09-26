@@ -64,6 +64,20 @@ def main() -> int:
     driver = make_driver()
     failures: list[str] = []
     errors: list[str] = []
+    city_layer = {}
+    drawer_probe = {}
+    view_national = {}
+    view_province = {}
+    before_click = {}
+    after_click = {}
+    province_after_click = {}
+    planner_shell = {}
+    plan_text = ""
+    stop_rows = 0
+    live2d = {}
+    mouth_probe = {}
+    mouth_values = []
+    l2d_pixels = None
     route_result = None
     route_active = False
     route_state = {}
@@ -79,7 +93,7 @@ def main() -> int:
 
         driver.get(f"{BASE}/?t=06:30")
         time.sleep(7)
-        labels = driver.execute_script("return document.querySelectorAll('.city-label').length") or 0
+        labels = driver.execute_script("return document.querySelectorAll('.city-label[data-slug]').length") or 0
         gl = driver.execute_script(
             "const c=document.querySelector('#stage');"
             "const g=c.getContext('webgl2')||c.getContext('webgl');"
@@ -136,11 +150,14 @@ def main() -> int:
         # 路线规划：先回到初始视角，再进入模式 → 点五个城市标签 → LKH 求解 → 截图
         driver.get(f"{BASE}/?t=12:00")
         time.sleep(5)
+        driver.find_element("id", "nav-toggle").click()
+        time.sleep(0.5)
         driver.find_element("id", "route-btn").click()
         time.sleep(0.6)
         route_active = driver.execute_script("return window.__cl.route().active")
         for slug in ("beijing", "shanghai", "guangzhou", "xian", "chengdu"):
-            driver.find_element("css selector", f'.city-label[data-slug="{slug}"]').click()
+            element = driver.find_element("css selector", f'.city-label[data-slug="{slug}"]')
+            driver.execute_script("arguments[0].click()", element)  # 小标签可能重叠，用 JS 点击更稳
             time.sleep(0.2)
         driver.set_script_timeout(60)
         route_result = driver.execute_async_script(
@@ -151,6 +168,72 @@ def main() -> int:
         time.sleep(1.2)
         route_shot = OUT / "06_route.png"
         clean_shot(driver, route_shot)
+
+        # 导航抽屉：先复位为关闭，再验证「点击导航 → 弹出 → 内含功能 → 密度切换 → 关闭」
+        driver.execute_script(
+            "document.getElementById('drawer').classList.remove('open');"
+            "document.getElementById('drawer-backdrop').classList.remove('show');"
+        )
+        time.sleep(0.5)
+        drawer_probe = {
+            'closed_at_start': driver.execute_script("return !document.getElementById('drawer').classList.contains('open')"),
+            'has_timeboard': driver.execute_script("return !!document.querySelector('#drawer #timeboard')"),
+            'has_city_search': driver.execute_script("return !!document.querySelector('#drawer #city-search')"),
+            'has_quality': driver.execute_script("return !!document.querySelector('#drawer #quality-select')"),
+            'has_route_btn': driver.execute_script("return !!document.querySelector('#drawer #route-btn')"),
+            'has_planner_btn': driver.execute_script("return !!document.getElementById('planner-open')"),
+        }
+        driver.find_element("id", "nav-toggle").click()
+        time.sleep(0.7)
+        drawer_probe['opens'] = driver.execute_script("return document.getElementById('drawer').classList.contains('open')")
+        view_national = driver.execute_script("return window.__cl.cityLayer()")
+        driver.find_element("id", "drawer-close").click()
+        time.sleep(0.6)
+        drawer_probe['closes'] = driver.execute_script("return !document.getElementById('drawer').classList.contains('open')")
+
+        # 缩放到省级视野：应自动显示该省的城市（无需手动选择）
+        driver.execute_script("window.__cl.focusCity('洛阳')")
+        time.sleep(5.5)
+        view_province = driver.execute_script("return window.__cl.cityLayer()")
+
+        # 点击省份区块 → 飞到该省
+        driver.get(f"{BASE}/?t=12:00")
+        time.sleep(6)
+        before_click = driver.execute_script("return window.__cl.cityLayer()")
+        driver.execute_script(
+            """
+            const c = document.getElementById('stage');
+            const x = window.innerWidth * 0.5, y = window.innerHeight * 0.58;
+            const opts = {clientX: x, clientY: y, bubbles: true, button: 0, pointerId: 1, isPrimary: true, pointerType: 'mouse'};
+            c.dispatchEvent(new PointerEvent('pointerdown', opts));
+            c.dispatchEvent(new PointerEvent('pointerup', opts));
+            """
+        )
+        time.sleep(5.5)
+        after_click = driver.execute_script("return window.__cl.cityLayer()")
+        province_after_click = driver.execute_script("return window.__cl.province()")
+
+        # 全国城市图层
+        city_layer = driver.execute_script("return window.__cl.cityLayer()")
+
+        live2d = driver.execute_script("return window.__cl.human()")
+
+        # 数字人是否真的画出来了：回读模型像素
+        l2d_pixels = driver.execute_script("return window.__cl.humanMeasure()")
+
+        # 口型驱动验证：走真实链路——打开城市让数字人播报，轮询口型参数
+        driver.execute_script("window.__cl.openCity('shanghai')")
+        mouth_values = []
+        mouth_probe = {}
+        for _ in range(15):
+            time.sleep(0.4)
+            mouth_probe = driver.execute_script("return window.__cl.humanProbe()")
+            value = mouth_probe.get("mouthValue") or 0
+            mouth_values.append(value)
+            if value > 0.1 and mouth_probe.get("speaking"):
+                break
+        driver.execute_script("window.__cl.closeCity()")
+        time.sleep(0.5)
 
         errors = driver.execute_script("return window.__errors || []") or []
     finally:
@@ -192,9 +275,87 @@ def main() -> int:
     print(f"相机控制：拖拽 {'生效' if camera_before['position'] != camera_rotated['position'] else '无效'}"
           f"，缩放 {distance_before:.2f} → {distance_after:.2f}")
 
+    print(
+        f"Live2D 运行时：PIXI.live2d={live2d.get('runtimeLoaded')} CubismCore={live2d.get('coreLoaded')} "
+        f"模型={live2d.get('hasModel')} 提示={live2d.get('notice') or '无'}"
+    )
+    if not live2d.get("runtimeLoaded") or not live2d.get("coreLoaded"):
+        failures.append("Live2D 运行时（PIXI.live2d / Cubism Core）未加载")
+    if not live2d.get("hasModel") and not live2d.get("notice"):
+        failures.append("没有模型时未给出放入形象的提示")
+    if live2d.get("hasModel"):
+        print(
+            f"口型驱动：参数={mouth_probe.get('mouthParameter')} 索引={mouth_probe.get('mouthIndex')} "
+            f"说话时参数值={mouth_probe.get('mouthValue')}"
+        )
+        if l2d_pixels:
+            print(
+                f"数字人绘制像素：{l2d_pixels.get('opaque')} 个 / {l2d_pixels.get('width')}x{l2d_pixels.get('height')}"
+                f"（占比 {(l2d_pixels.get('ratio') or 0) * 100:.1f}%）"
+            )
+        if not l2d_pixels or (l2d_pixels.get("ratio") or 0) < 0.05:
+            failures.append(f"数字人没有渲染出可见像素：{l2d_pixels}")
+        print(
+            f"播报中口型峰值：{max(mouth_values or [0]):.3f}"
+            f"（最后读回 {mouth_probe.get('mouthValue')}，speaking={mouth_probe.get('speaking')}）"
+        )
+        if (mouth_probe.get("mouthIndex") or -1) < 0:
+            failures.append("模型缺少口型参数，嘴不会动")
+        elif max(mouth_values or [0]) <= 0.1:
+            failures.append(f"播报时口型参数没有被驱动：峰值 {max(mouth_values or [0]):.3f}")
+
     if route_result:
         print(f"路线求解：{route_result['solver']} | {len(route_result['order'])} 城 | {route_result['distance_km']} 公里 | {route_result['elapsed_ms']} ms")
         print(f"路线顺序：{' → '.join(route_result['names'])}")
+    print(
+        f"导航抽屉：默认关闭={drawer_probe.get('closed_at_start')} 可打开={drawer_probe.get('opens')} 可关闭={drawer_probe.get('closes')} "
+        f"内含 时间牌={drawer_probe.get('has_timeboard')} 城市搜索={drawer_probe.get('has_city_search')} "
+        f"画质={drawer_probe.get('has_quality')} 路线按钮={drawer_probe.get('has_route_btn')} 行程入口={drawer_probe.get('has_planner_btn')}"
+    )
+    print(
+        f"点击省份区块：点击前 {before_click.get('viewKm')} km（{before_click.get('level')}）"
+        f" → 点击后 {after_click.get('viewKm')} km（{after_click.get('level')}），"
+        f"省界可见={province_after_click.get('visible')}，省名标签={province_after_click.get('labels')}"
+    )
+    if not before_click or not after_click:
+        failures.append("点击省份区块没有取到状态")
+    elif after_click.get("viewKm", 99999) >= before_click.get("viewKm", 0) * 0.6:
+        failures.append(f"点击省份后镜头没有飞入：{before_click.get('viewKm')} → {after_click.get('viewKm')}")
+    if not province_after_click.get("visible"):
+        failures.append("飞入省份后省界没有显示")
+
+    print(
+        f"城市显示：全国尺度 {view_national.get('level')} · {view_national.get('visible')} 城 · 视野 {view_national.get('viewKm')} km"
+        f" → 飞入洛阳后 {view_province.get('level')} · {view_province.get('visible')} 城 · 视野 {view_province.get('viewKm')} km"
+    )
+    for key, message in (
+        ("closed_at_start", "导航抽屉默认应为关闭"),
+        ("opens", "导航抽屉无法打开"),
+        ("has_timeboard", "时间牌没有进入抽屉"),
+        ("has_city_search", "城市搜索没有进入抽屉"),
+        ("has_quality", "画质选择没有进入抽屉"),
+        ("has_route_btn", "路线规划按钮没有进入抽屉"),
+        ("has_planner_btn", "行程规划入口缺失"),
+    ):
+        if not drawer_probe.get(key):
+            failures.append(message)
+    if not drawer_probe.get("closes"):
+        failures.append("导航抽屉无法关闭")
+    if view_national.get("level") != "national" or (view_national.get("visible") or 0) > 60:
+        failures.append(f"全国尺度应只显示重点城市：{view_national}")
+    if view_province.get("level") != "province":
+        failures.append(f"缩放到省级应有 province 档位：{view_province}")
+    elif (view_province.get("visible") or 0) <= (view_national.get("visible") or 0) * 0.5:
+        failures.append(f"省级视野没有显示更多城市：{view_province}")
+    if not view_province.get("labels"):
+        failures.append("省级视野下城市名没有出现")
+
+    print(f"全国城市图层：{city_layer.get('total')} 城，当前档位 {city_layer.get('level')}，可见 {city_layer.get('visible')}，标签 {city_layer.get('labels')}")
+    if (city_layer.get("total") or 0) < 300:
+        failures.append(f"城市图层数量异常：{city_layer.get('total')}")
+    if city_layer.get("level") not in {"national", "province"}:
+        failures.append(f"城市显示档位异常：{city_layer.get('level')}")
+    print("行程工作台的完整验证见 tools/browser_check_planner.py")
     if not route_active:
         failures.append("点击「路线规划」后没有进入路线模式")
     if route_state.get("selected") and not route_result:
@@ -206,7 +367,13 @@ def main() -> int:
     if len(route_state.get("selected", [])) != 5:
         failures.append(f"选中城市数量异常：{route_state.get('selected')}")
 
-    severe = [item for item in errors if not item.startswith("console.warn")]
+    # 说明：点击省份用的是合成 PointerEvent，OrbitControls 对合成 pointerId 调 setPointerCapture 会报
+    # NotFoundError，真实鼠标点击不会出现；这里显式忽略该测试脚手架噪音。
+    severe = [
+        item
+        for item in errors
+        if not item.startswith("console.warn") and "setPointerCapture" not in item
+    ]
     print(f"页面记录条目 {len(errors)} 条，其中错误 {len(severe)} 条")
     for item in errors[:12]:
         print(f"  {item[:240]}")

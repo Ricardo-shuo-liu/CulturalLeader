@@ -155,3 +155,33 @@ def test_route_requires_two_cities(client: TestClient):
 def test_route_unknown_city(client: TestClient):
     response = client.post("/api/route/solve", json={"slugs": ["beijing", "nowhere"]})
     assert response.status_code == 404
+
+
+def test_chat_emits_fay_human_messages(client: TestClient):
+    """Fay 约定的数字人指令：Topic=human / Key=audio / Action 语义。"""
+    import json as _json
+    import re as _re
+
+    with client.stream(
+        "POST",
+        "/api/chat",
+        json={"city_slug": "xian", "message": "钟楼为什么建在路中间？"},
+    ) as response:
+        body = "".join(response.iter_text())
+
+    assert "event: human" in body
+    raw = _re.search(r"event: human\ndata: (.+)", body)
+    assert raw is not None
+    payload = _json.loads(raw.group(1))
+    assert payload["Topic"] == "human"
+    assert payload["Data"]["Key"] == "audio"
+    assert payload["Data"]["Text"]
+    assert payload["Data"]["IsFirst"] in (0, 1)
+    assert payload["Data"]["IsEnd"] in (0, 1)
+    assert payload["Data"]["Action"]["code"] in {"greeting", "speak.explain", "guidance.invite"}
+    # Mock 模式下不下发音频地址（由前端走浏览器语音）
+    assert payload["Data"]["HttpValue"] is None
+
+
+def test_tts_get_rejects_empty_text(client: TestClient):
+    assert client.get("/api/tts", params={"text": "   "}).status_code == 400

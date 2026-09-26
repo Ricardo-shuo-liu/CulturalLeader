@@ -12,3 +12,6 @@ tests_artifacts/
 .pytest_cache/
 LKH-3.0.14/SRC/OBJ/
 LKH-3.0.14/LKH.dSYM/
+frontend/assets/live2d/model/*
+!frontend/assets/live2d/model/.gitkeep
+data/trips/

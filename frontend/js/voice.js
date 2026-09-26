@@ -98,6 +98,9 @@ export class VoiceIO {
           this.handlers.onToken?.(event.data.text);
         } else if (event.event === 'sentence') {
           this.handlers.onSentence?.(event.data.text);
+        } else if (event.event === 'human') {
+          // Fay 风格数字人指令：Topic=human，Data.Key=audio，含 Action/Sentiment
+          this.handlers.onHuman?.(event.data);
         } else if (event.event === 'error') {
           this.handlers.onError?.(event.data.message);
         }

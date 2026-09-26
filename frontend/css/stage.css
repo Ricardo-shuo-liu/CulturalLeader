@@ -208,8 +208,9 @@ body {
   letter-spacing: 2px;
   cursor: pointer;
   pointer-events: auto;
-  backdrop-filter: blur(3px);
-  transition: border-color 0.25s ease, background 0.25s ease, opacity 0.3s ease;
+  z-index: 2; /* 重点城市标签盖在普通城市标签之上，避免点击被拦截 */
+  /* 注意：标签数量可能上百个，这里不能用 backdrop-filter（逐个模糊背景会严重掉帧） */
+  transition: border-color 0.2s ease, background 0.2s ease;
 }
 
 .city-label .dot {
@@ -236,7 +237,7 @@ body.route-mode .city-label {
   color: #fff6e2;
 }
 
-#avatar-canvas {
+#live2d-stage {
   position: fixed;
   right: 12px;
   bottom: 0;
@@ -244,6 +245,51 @@ body.route-mode .city-label {
   height: 620px;
   pointer-events: none;
   z-index: 5;
+  transition: filter 0.6s ease;
+}
+
+#live2d-canvas {
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+#live2d-credit {
+  position: absolute;
+  right: 14px;
+  bottom: 6px;
+  font-size: 10px;
+  letter-spacing: 0.5px;
+  color: rgba(232, 220, 195, 0.34);
+  pointer-events: none;
+  user-select: none;
+}
+
+.live2d-notice {
+  position: absolute;
+  left: 12px;
+  right: 12px;
+  bottom: 24px;
+  padding: 16px 18px;
+  border-radius: 14px;
+  background: rgba(8, 18, 23, 0.86);
+  border: 1px solid rgba(232, 220, 195, 0.22);
+  color: rgba(240, 232, 214, 0.92);
+  font-family: var(--serif);
+  font-size: 13px;
+  line-height: 1.9;
+  pointer-events: auto;
+}
+
+.live2d-notice-title {
+  font-size: 15px;
+  letter-spacing: 2px;
+  color: var(--gold);
+  margin-bottom: 6px;
+}
+
+.live2d-notice-line b {
+  color: #ffe9b8;
 }
 
 #speech-bubble {
@@ -565,7 +611,21 @@ body.route-mode .city-label {
   transition: opacity 0.6s ease;
 }
 
-#loading.hidden {
+#loading.tool-select {
+  position: fixed;
+  left: 22px;
+  top: 138px;
+  padding: 6px 10px;
+  border-radius: 999px;
+  border: 1px solid rgba(232, 220, 195, 0.22);
+  background: rgba(6, 13, 18, 0.6);
+  color: rgba(240, 232, 214, 0.85);
+  font-family: var(--serif);
+  font-size: 12.5px;
+  z-index: 8;
+}
+
+.hidden {
   opacity: 0;
   pointer-events: none;
 }
@@ -586,7 +646,7 @@ body.route-mode .city-label {
     max-height: 52vh;
   }
 
-  #avatar-canvas {
+  #live2d-stage {
     width: 240px;
     height: 320px;
   }
@@ -607,4 +667,594 @@ body.route-mode .city-label {
     right: 216px;
     top: 14px;
   }
+}
+
+
+/* 城市搜索 / 城市卡片 */
+#city-search {
+  position: fixed;
+  left: 22px;
+  top: 98px;
+  width: 210px;
+  padding: 8px 12px;
+  border-radius: 999px;
+  border: 1px solid rgba(232, 220, 195, 0.22);
+  background: rgba(6, 13, 18, 0.6);
+  color: var(--paper);
+  font-family: var(--serif);
+  font-size: 13px;
+  z-index: 8;
+}
+
+#city-card {
+  position: fixed;
+  left: 22px;
+  top: 146px;
+  width: 250px;
+  padding: 14px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  z-index: 9;
+}
+
+#city-card header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+#city-card header button {
+  border: none;
+  background: transparent;
+  color: rgba(232, 220, 195, 0.6);
+  cursor: pointer;
+}
+
+#city-card .primary,
+.planner-row .primary {
+  padding: 9px;
+  border-radius: 9px;
+  border: 1px solid rgba(242, 200, 121, 0.6);
+  background: rgba(242, 200, 121, 0.16);
+  color: var(--gold);
+  font-family: var(--serif);
+  cursor: pointer;
+}
+
+.tool-select {
+  position: fixed;
+  left: 22px;
+  top: 138px;
+  padding: 6px 10px;
+  border-radius: 999px;
+  border: 1px solid rgba(232, 220, 195, 0.22);
+  background: rgba(6, 13, 18, 0.6);
+  color: rgba(240, 232, 214, 0.85);
+  font-family: var(--serif);
+  font-size: 12.5px;
+  z-index: 8;
+}
+
+.hidden {
+  display: none !important;
+}
+
+.city-label-minor {
+  z-index: 1;
+  /* 密集标签不能拦截指针，否则会挡住地图拖拽旋转动作；
+     点击城市仍由画布的精确定位命中处理 */
+  pointer-events: none;
+  background: rgba(6, 13, 18, 0.72);
+  padding: 2px 8px;
+  margin: -9px 0 0 -18px;
+  font-size: 12px;
+  letter-spacing: 1px;
+  opacity: 0.82;
+  border-color: rgba(232, 220, 195, 0.16);
+}
+
+/* 行程工作台 */
+#planner {
+  position: fixed;
+  inset: 0;
+  z-index: 30;
+  background: rgba(4, 9, 12, 0.96);
+  display: flex;
+  flex-direction: column;
+  font-family: var(--serif);
+  color: var(--paper);
+}
+
+.planner-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 18px;
+  border-bottom: 1px solid rgba(232, 220, 195, 0.14);
+}
+
+.planner-head button,
+.planner-side button,
+.planner-searchbar button,
+.planner-poi-item button,
+.planner-detail button {
+  padding: 7px 12px;
+  border-radius: 8px;
+  border: 1px solid rgba(232, 220, 195, 0.22);
+  background: rgba(8, 18, 23, 0.7);
+  color: rgba(240, 232, 214, 0.92);
+  font-family: var(--serif);
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.planner-spacer { flex: 1; }
+
+.planner-head select {
+  padding: 7px 10px;
+  border-radius: 8px;
+  background: rgba(8, 18, 23, 0.8);
+  color: var(--paper);
+  border: 1px solid rgba(232, 220, 195, 0.2);
+  font-family: var(--serif);
+}
+
+.planner-days {
+  display: flex;
+  gap: 8px;
+  padding: 10px 18px;
+  overflow-x: auto;
+  border-bottom: 1px solid rgba(232, 220, 195, 0.1);
+}
+
+.planner-day {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  padding: 8px 14px;
+  border-radius: 10px;
+  border: 1px solid rgba(232, 220, 195, 0.18);
+  border-left: 4px solid var(--day-color, var(--gold));
+  background: rgba(8, 18, 23, 0.6);
+  color: rgba(240, 232, 214, 0.85);
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.planner-day.active {
+  background: rgba(242, 200, 121, 0.16);
+  border-color: var(--day-color, var(--gold));
+}
+
+.planner-day small { font-size: 11px; opacity: 0.7; }
+
+.planner-main {
+  flex: 1;
+  display: grid;
+  grid-template-columns: 360px 1fr;
+  min-height: 0;
+}
+
+.planner-side {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 14px;
+  overflow-y: auto;
+  border-right: 1px solid rgba(232, 220, 195, 0.12);
+}
+
+.planner-row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+
+.planner-row input[type="text"],
+.planner-row input[type="search"],
+.planner-searchbar input {
+  flex: 1;
+  min-width: 120px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  border: 1px solid rgba(232, 220, 195, 0.2);
+  background: rgba(6, 13, 18, 0.7);
+  color: var(--paper);
+  font-family: var(--serif);
+  font-size: 13px;
+}
+
+.planner-row input[type="time"],
+.planner-row input[type="number"] {
+  padding: 6px 8px;
+  border-radius: 8px;
+  border: 1px solid rgba(232, 220, 195, 0.2);
+  background: rgba(6, 13, 18, 0.7);
+  color: var(--paper);
+  font-family: var(--serif);
+}
+
+.seg {
+  display: inline-flex;
+  border: 1px solid rgba(232, 220, 195, 0.2);
+  border-radius: 999px;
+  overflow: hidden;
+}
+
+.seg button {
+  border: none;
+  border-radius: 0;
+  padding: 6px 14px;
+  background: transparent;
+  color: rgba(232, 220, 195, 0.75);
+}
+
+.seg button.active {
+  background: rgba(242, 200, 121, 0.22);
+  color: #fff3d6;
+}
+
+.planner-stops {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.planner-stop {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border-radius: 10px;
+  border: 1px solid rgba(232, 220, 195, 0.16);
+  background: rgba(22, 50, 58, 0.45);
+  cursor: pointer;
+}
+
+.planner-stop.active {
+  border-color: var(--gold);
+  background: rgba(242, 200, 121, 0.14);
+}
+
+.planner-stop-index {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: var(--gold);
+  color: #10202a;
+  font-size: 12px;
+}
+
+.planner-stop-main { flex: 1; display: flex; flex-direction: column; }
+.planner-stop-main small { font-size: 11px; opacity: 0.7; }
+.planner-stop-tools { display: flex; gap: 4px; }
+.planner-stop-tools button { padding: 3px 7px; font-size: 12px; border-radius: 6px; }
+.planner-stop-tools button:disabled { opacity: 0.35; cursor: default; }
+
+.planner-plan {
+  margin: 0;
+  padding: 10px;
+  border-radius: 10px;
+  background: rgba(6, 13, 18, 0.6);
+  border: 1px solid rgba(232, 220, 195, 0.12);
+  font-size: 12.5px;
+  line-height: 1.8;
+  white-space: pre-wrap;
+  max-height: 260px;
+  overflow-y: auto;
+}
+
+.planner-map { position: relative; min-height: 0; }
+#planner-map-canvas { position: absolute; inset: 0; }
+#planner-map-canvas.dragging { cursor: grabbing; }
+.planner-canvas { width: 100%; height: 100%; display: block; }
+
+.planner-searchbar {
+  position: absolute;
+  left: 16px;
+  top: 16px;
+  right: 16px;
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  z-index: 5;
+}
+
+.planner-buckets {
+  position: absolute;
+  left: 16px;
+  top: 62px;
+  display: flex;
+  gap: 6px;
+  z-index: 5;
+}
+
+.planner-buckets button {
+  padding: 5px 12px;
+  border-radius: 999px;
+  border: 1px solid rgba(232, 220, 195, 0.24);
+  background: rgba(8, 18, 23, 0.72);
+  color: rgba(240, 232, 214, 0.85);
+  font-family: var(--serif);
+  font-size: 12.5px;
+  cursor: pointer;
+}
+
+.planner-buckets button.active {
+  background: rgba(242, 200, 121, 0.2);
+  border-color: var(--gold);
+}
+
+.planner-poi {
+  position: absolute;
+  right: 16px;
+  top: 62px;
+  width: 300px;
+  max-height: 60%;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  z-index: 5;
+}
+
+.planner-poi-title { font-size: 12px; color: rgba(242, 200, 121, 0.8); }
+
+.planner-poi-item {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 8px 10px;
+  border-radius: 10px;
+  background: rgba(8, 18, 23, 0.85);
+  border: 1px solid rgba(232, 220, 195, 0.16);
+  font-size: 13px;
+}
+
+.planner-poi-item small { font-size: 11px; opacity: 0.7; }
+
+.planner-detail {
+  position: absolute;
+  left: 16px;
+  bottom: 16px;
+  width: 320px;
+  display: none;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px 14px;
+  border-radius: 12px;
+  background: rgba(8, 18, 23, 0.94);
+  border: 1px solid rgba(242, 200, 121, 0.4);
+  z-index: 6;
+}
+
+.planner-detail.show { display: flex; }
+.planner-detail header { display: flex; justify-content: space-between; align-items: center; }
+.planner-detail-row { display: flex; gap: 8px; align-items: center; font-size: 13px; }
+.planner-empty { font-size: 12.5px; color: rgba(232, 220, 195, 0.55); }
+
+.planner-toast {
+  position: absolute;
+  left: 50%;
+  bottom: 24px;
+  transform: translate(-50%, 12px);
+  padding: 9px 18px;
+  border-radius: 999px;
+  background: rgba(6, 13, 18, 0.92);
+  border: 1px solid rgba(232, 220, 195, 0.25);
+  font-size: 13px;
+  opacity: 0;
+  transition: opacity 0.25s ease, transform 0.25s ease;
+  pointer-events: none;
+}
+
+.planner-toast.show { opacity: 1; transform: translate(-50%, 0); }
+.planner-toast.error { border-color: rgba(224, 100, 95, 0.7); color: #ffb4ae; }
+
+.planner-marker {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  background: var(--pin, #f2c879);
+  color: #10202a;
+  font-size: 12px;
+  font-weight: bold;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.45);
+}
+
+.planner-marker-label {
+  margin-top: 2px;
+  font-size: 11px;
+  color: #fff3d6;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.8);
+  white-space: nowrap;
+}
+
+@media (max-width: 980px) {
+  .planner-main { grid-template-columns: 1fr; }
+  .planner-side { max-height: 42vh; }
+  .planner-poi { width: 220px; }
+}
+
+
+/* ───────────── 导航抽屉 ───────────── */
+.nav-toggle {
+  position: fixed;
+  left: 22px;
+  top: 22px;
+  padding: 9px 16px;
+  border-radius: 999px;
+  border: 1px solid rgba(242, 200, 121, 0.5);
+  background: rgba(6, 13, 18, 0.72);
+  color: var(--gold);
+  font-family: var(--serif);
+  font-size: 14px;
+  letter-spacing: 1px;
+  cursor: pointer;
+  z-index: 27;
+}
+
+#drawer-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(2, 6, 9, 0.5);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.3s ease;
+  z-index: 25;
+}
+
+#drawer-backdrop.show {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+#drawer {
+  position: fixed;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 330px;
+  padding: 18px 18px 28px;
+  overflow-y: auto;
+  border-radius: 0 18px 18px 0;
+  transform: translateX(-104%);
+  transition: transform 0.32s ease;
+  z-index: 26;
+}
+
+#drawer.open {
+  transform: none;
+}
+
+.drawer-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 14px;
+}
+
+.drawer-head strong {
+  font-size: 18px;
+  letter-spacing: 4px;
+}
+
+.drawer-head button {
+  border: none;
+  background: transparent;
+  color: rgba(232, 220, 195, 0.7);
+  font-size: 16px;
+  cursor: pointer;
+}
+
+.drawer-section {
+  padding: 12px 0;
+  border-top: 1px solid rgba(232, 220, 195, 0.12);
+}
+
+.drawer-section h4 {
+  margin: 0 0 10px;
+  font-size: 12px;
+  letter-spacing: 3px;
+  color: rgba(242, 200, 121, 0.8);
+  font-weight: normal;
+}
+
+.drawer-label {
+  display: block;
+  margin: 10px 0 4px;
+  font-size: 12px;
+  color: rgba(232, 220, 195, 0.6);
+}
+
+#drawer select,
+#drawer input[type="search"],
+#drawer .drawer-btn {
+  width: 100%;
+  padding: 9px 12px;
+  border-radius: 10px;
+  border: 1px solid rgba(232, 220, 195, 0.22);
+  background: rgba(6, 13, 18, 0.7);
+  color: var(--paper);
+  font-family: var(--serif);
+  font-size: 13px;
+  margin-bottom: 8px;
+}
+
+#drawer .drawer-btn {
+  cursor: pointer;
+}
+
+#drawer .drawer-btn.primary {
+  border-color: rgba(242, 200, 121, 0.6);
+  background: rgba(242, 200, 121, 0.16);
+  color: var(--gold);
+}
+
+/* 抽屉内的控件一律取消固定定位，避免浮在抽屉上方挡住其它按钮 */
+#drawer #timeboard,
+#drawer #city-search,
+#drawer #quality-select,
+#drawer #mute-btn,
+#drawer #route-btn,
+#drawer #hint {
+  position: static;
+  width: 100%;
+  left: auto;
+  right: auto;
+  top: auto;
+  margin: 0 0 8px;
+  z-index: auto;
+}
+
+#drawer #timeboard {
+  padding: 12px 14px;
+  background: rgba(6, 13, 18, 0.45);
+  border: 1px solid rgba(232, 220, 195, 0.14);
+  border-radius: 12px;
+}
+
+#drawer .tb-panel {
+  max-height: none;
+  margin-top: 10px;
+}
+
+.drawer-note {
+  margin: 8px 0 0;
+  font-size: 12.5px;
+  line-height: 1.9;
+  color: rgba(232, 220, 195, 0.62);
+}
+
+.drawer-note b {
+  color: #ffe9b8;
+  font-weight: normal;
+}
+
+.drawer-note {
+  margin: 8px 0 0;
+  font-size: 12.5px;
+  line-height: 1.9;
+  color: rgba(232, 220, 195, 0.62);
+}
+
+.drawer-note b {
+  color: #ffe9b8;
+  font-weight: normal;
+}
+
+#drawer #hint {
+  padding: 0;
+  border: none;
+  background: transparent;
+  font-size: 12.5px;
+  line-height: 1.9;
+  color: rgba(232, 220, 195, 0.62);
 }

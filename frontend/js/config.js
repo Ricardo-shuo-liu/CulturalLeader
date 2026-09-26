@@ -27,7 +27,7 @@ export const STAGE = {
     fov: 32,
     position: [0, 3.9, 5.1],
     target: [0, 0.05, 0.1],
-    minDistance: 2.2,
+    minDistance: 0.35,
     maxDistance: 11,
     minPolar: 0.16,
     maxPolar: 1.34,

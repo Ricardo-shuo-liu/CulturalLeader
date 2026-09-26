@@ -11,8 +11,5 @@ export async function resolve(specifier, context, nextResolve) {
     const rest = specifier.slice('three/addons/'.length);
     return { url: new URL(`three/examples/jsm/${rest}`, VENDOR).href, shortCircuit: true };
   }
-  if (specifier === '@pixiv/three-vrm') {
-    return { url: new URL('three-vrm/three-vrm.module.js', VENDOR).href, shortCircuit: true };
-  }
   return nextResolve(specifier, context);
 }

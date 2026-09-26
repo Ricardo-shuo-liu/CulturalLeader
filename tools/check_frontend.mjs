@@ -13,6 +13,8 @@ const geo = await import(path.join(root, 'frontend/js/geo.js'));
 const terrain = await import(path.join(root, 'frontend/js/terrain.js'));
 const { STAGE } = await import(path.join(root, 'frontend/js/config.js'));
 const { RANGES } = await import(path.join(root, 'frontend/js/data/ranges.js'));
+const tripUtils = await import(path.join(root, 'frontend/js/map/trip_utils.js'));
+const { CITIES_CN } = await import(path.join(root, 'frontend/js/data/cities-cn.js'));
 
 const results = [];
 function check(name, fn) {
@@ -147,6 +149,74 @@ check('山脊数据完整', () => {
     assert.ok(range.layer >= 0 && range.layer <= 3, `${range.name} 层级错误`);
   }
   return `${RANGES.length} 条主脊`;
+});
+
+check('全国城市数据完整（≥330 城且坐标在国内）', () => {
+  assert.ok(CITIES_CN.length >= 330, `城市数 ${CITIES_CN.length}`);
+  const bad = CITIES_CN.filter((city) => !(73 <= city.lng && city.lng <= 136 && 3 <= city.lat && city.lat <= 54));
+  assert.equal(bad.length, 0, `越界城市 ${bad.slice(0, 3).map((c) => c.name).join(',')}`);
+  const tiers = new Set(CITIES_CN.map((city) => city.tier));
+  for (const tier of ['municipality', 'capital', 'prefecture']) assert.ok(tiers.has(tier), `缺少层级 ${tier}`);
+  return `${CITIES_CN.length} 城`;
+});
+
+check('城市显示：全国尺度只留重点城市，进入省级才显示该省城市', () => {
+  const national = tripUtils.visibleCitiesForView(CITIES_CN, {
+    minLng: 73, maxLng: 136, minLat: 18, maxLat: 54, widthKm: 4000,
+  });
+  const BIG = ['municipality', 'sar', 'subprovincial', 'capital'];
+  assert.equal(national.level, 'national');
+  assert.ok(national.cities.length >= 30 && national.cities.length < 60, `重点城市数量异常：${national.cities.length}`);
+  assert.ok(national.cities.every((city) => BIG.includes(city.tier)), '全国尺度只能显示重点层级');
+
+  // 缩到洛阳一带（河南省范围）
+  const henan = tripUtils.visibleCitiesForView(CITIES_CN, {
+    minLng: 110.3, maxLng: 116.7, minLat: 31.4, maxLat: 36.4, widthKm: 420,
+  });
+  assert.equal(henan.level, 'province');
+  assert.ok(henan.cities.length > 8, `省级视野应显示该省城市，实际 ${henan.cities.length}`);
+  const luoyang = henan.cities.find((city) => city.name.startsWith('洛阳'));
+  assert.ok(luoyang, '洛阳应在省级视野内出现');
+  assert.ok(
+    henan.cities.some((city) => city.tier === 'prefecture'),
+    '省级视野应包含地级市（不只是重点城市）',
+  );
+  return `全国 ${national.cities.length} 城 / 河南视野 ${henan.cities.length} 城（含洛阳）`;
+});
+
+check('拖拽落点 → 插入下标', () => {
+  const points = [ { x: 100, y: 100 }, { x: 200, y: 100 }, { x: 300, y: 100 } ];
+  assert.equal(tripUtils.insertIndexForDrop(points, { x: 150, y: 104 }), 1, '落在第 1 段中点应插到 1');
+  assert.equal(tripUtils.insertIndexForDrop(points, { x: 250, y: 96 }), 2, '落在第 2 段中点应插到 2');
+  assert.equal(tripUtils.insertIndexForDrop(points, { x: 20, y: 100 }), 0, '落在首点之前应插到 0');
+  assert.equal(tripUtils.insertIndexForDrop(points, { x: 380, y: 100 }), 3, '落在末点之后应插到末尾');
+  return '四种落点均正确';
+});
+
+check('按天配色与时段分桶稳定', () => {
+  assert.equal(tripUtils.dayColor(0), tripUtils.dayColor(8), '配色应 8 色循环');
+  assert.notEqual(tripUtils.dayColor(0), tripUtils.dayColor(1));
+  assert.equal(tripUtils.bucketForHour(8), 'breakfast');
+  assert.equal(tripUtils.bucketForHour(12), 'lunch');
+  assert.equal(tripUtils.bucketForHour(15), 'coffee');
+  assert.equal(tripUtils.bucketForHour(18), 'dinner');
+  assert.equal(tripUtils.bucketForHour(22), 'night');
+  return '配色循环 + 5 个时段分桶';
+});
+
+check('离线示意图投影落在画布内', () => {
+  const points = [
+    { lng: 108.94, lat: 34.26 },
+    { lng: 109.27, lat: 34.38 },
+    { lng: 108.96, lat: 34.22 },
+  ];
+  const projected = tripUtils.projectToBox(points, 800, 600, 40);
+  assert.equal(projected.length, 3);
+  for (const point of projected) {
+    assert.ok(point.x >= 40 && point.x <= 760, `x 越界 ${point.x}`);
+    assert.ok(point.y >= 40 && point.y <= 560, `y 越界 ${point.y}`);
+  }
+  return '三点均在画布内';
 });
 
 let failed = 0;

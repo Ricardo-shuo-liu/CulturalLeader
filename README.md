@@ -60,11 +60,9 @@ URL 覆盖：`?t=2026-09-23T06:30` 或 `?t=06:30`，`?live=0` 关闭实时跟随
                        广州塔（双曲塔身+24 根斜肋+8 道环+观景台）、
                        钟楼（砖砌台基+斗栱+彩画额枋+四角攒尖+脊兽）、
                        熊猫塔（线脚塔身+五个球舱+环廊）
-数字人                 独立透明画布常驻右下：默认是程序化"敦煌彩塑"形象——垂眸含笑
-                       （不用写实眼球，避开恐怖谷）、头光背光、披帛飘带、程序化纹样衣袍，
-                       卡通着色；口型、点头、手势与飘带随语音驱动。
-                       放入 frontend/assets/avatar.vrm 会自动改用 VRM，并按包围盒自动
-                       适配画布、开启 lookAt 与 aa/blink/happy 表情
+数字人（Live2D）       独立透明画布常驻右下：Cubism 5 模型 + 音频包络驱动口型
+                       （ParamMouthOpenY）/ 自动眨眼 / 视线跟随 / Idle 与 TapBody 动作
+                       未放模型时显示接入引导卡片（迁移自 Fay，详见专门文档）
 画面收边               径向暗角 + 顶部压暗，让沙盘成为视觉中心
 ```
 
@@ -88,7 +86,11 @@ URL 覆盖：`?t=2026-09-23T06:30` 或 `?t=06:30`，`?live=0` 关闭实时跟随
 ```
 backend/app        FastAPI（城市/对话/语音/后台）+ SQLite
 backend/tests      pytest：接口、后台鉴权、Mock 降级
-frontend/js        舞台渲染、浮雕地形、天文日照、地标、数字人、语音
+frontend/js        舞台渲染、浮雕地形、天文日照、地标、语音
+frontend/js/fay    Fay 风格数字人（Live2D 加载/口型/动作/动作语义映射）
+frontend/assets/live2d  Live2D 模型与 config.json
+docs/              文档（含 Live2D 接入说明）
+THIRD_PARTY_LICENSES.md  第三方组件与许可
 frontend/vendor    本地 ESM 依赖（tools/vendor_frontend.py 生成，离线可用）
 tools              依赖抓取、轮廓数据、各类校验脚本
 ```
@@ -96,9 +98,14 @@ tools              依赖抓取、轮廓数据、各类校验脚本
 ## 校验
 
 ```bash
-./tools/check_all.sh                                    # 后端 8 项 + 前端 12 项 + 语法
+./tools/check_all.sh                                    # 后端 24 项 + 前端 17 项 + 语法
+python tools/check_live2d_model.py                      # Live2D 模型是否满足接入要求
+python tools/fetch_cities_cn.py                         # 重新生成全国城市清单（可选）
+python tools/check_map.py                               # 腾讯位置服务 Key 自检（类型/配额/接口可用性）
 ./run.sh &                                              # 另开一个终端
-python tools/browser_check.py && python tools/analyze_shots.py   # 真实浏览器验证
+python tools/browser_check.py                           # 沙盘/数字人/路线端到端
+python tools/browser_check_planner.py                   # 行程工作台端到端
+python tools/analyze_shots.py                           # 截图像素统计
 ```
 
 `browser_check.py` 用系统自带 Firefox（无头）验证 WebGL 启动、页面零错误、相机可旋转可缩放、
@@ -114,7 +121,37 @@ Node 未安装时可用便携版：`.tools/node/bin/node`（`check_all.sh` 会�
 `SpeechSynthesis`，语音识别走浏览器 `SpeechRecognition`（不可用时退回文字输入）。
 配置 `.env` 后即可切换到真实大模型与语音。
 
-## 替换数字人形象
+## 行程路径规划（沙盘 + 腾讯位置服务 + LKH-TSPTW）
 
-把任意 VRM 放到 `frontend/assets/avatar.vrm` 即可（three-vrm 已本地化，无需外网）；
-缺失时自动使用程序化水墨绢人，口型、眨眼、呼吸动作一致。
+左上角「☰ 导航」打开侧边抽屉，功能都在里面；沙盘按时视野自动切换标注——全国尺度只显示
+**重点城市**（约 33 个），缩进到**省级范围会自动显示该省的城市**（例：飞入洛阳后显示 17 城并带名字）。
+点城市进入行程工作台：用**腾讯位置服务**的真实地图与通勤时长逐日编排，
+LKH-3.0.14 的 TSPTW 按开放时间与固定预约做单日最优排序，支持地图长按拖拽调序、
+附近餐厅与小店推荐、按天配色 polyline、导出导入 JSON。
+只有腾讯 WebServiceAPI Key 也能完整使用：后端算真实通勤时长，城内地图用**离线矢量底图**
+（区县边界 + 滚轮缩放 + 拖拽平移 + 里程标注）。没有 Key 时降级为直线估算并标注。
+
+- 使用与配置：[docs/行程路径规划使用说明.md](docs/行程路径规划使用说明.md)
+- 后端：`backend/app/services/tencent_map.py`（缓存/限流/配额/降级）、`trip_optimizer.py`（TSPTW）、`trip_store.py`（本地 JSON）
+- 接口：`/api/geo/cities`、`/api/trips*`、`/api/poi/*`、`/api/map/status|selftest`、`/api/config`
+
+## 数字人（Live2D，迁移自 Fay）
+
+数字人采用 **Fay 风格的驱动约定**：服务端只说通用动作语义，前端用 Live2D 渲染，
+口型由音频包络实时驱动。迁移自 Fay 的《Live2D模型制作要求》与《标准动作改造说明》。
+
+项目里已内置官方示例模型 **Hiyori**（开箱即用，口型已实测可动）。换模型的 3 步：
+
+1. 把 Cubism 5 导出的整个目录放进 `frontend/assets/live2d/model/`（含 .moc3 与贴图）
+2. 在 `frontend/assets/live2d/config.json` 里把 `model` 指向 `model/你的模型.model3.json`
+3. 校验：`python tools/check_live2d_model.py`
+
+换官方示例模型一条命令搞定：`python tools/fetch_live2d_sample.py --name Haru`。
+**模型从哪来、怎么自制/委托、授权怎么算**，见
+**[docs/Cubism5资源获取指南.md](docs/Cubism5资源获取指南.md)**。
+
+详细配置项（缩放/锚点、口型参数、Idle 与 TapBody 动作组、动作语义映射、夜间调光）
+与常见问题见 **[docs/数字人（Live2D）接入说明.md](docs/数字人（Live2D）接入说明.md)**。
+
+Live2D 运行时（PixiJS / Cubism Core / pixi-live2d-display）已在 `frontend/vendor/live2d/`，
+缺失时可用 `python tools/vendor_live2d.py` 重新抓取。

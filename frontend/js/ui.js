@@ -2,6 +2,17 @@
 
 const $ = (id) => document.getElementById(id);
 
+// 时间格式化器只建一次：Intl.DateTimeFormat 构造很贵，不能每帧新建
+const BEIJING_FORMATTER = new Intl.DateTimeFormat('zh-CN', {
+  timeZone: 'Asia/Shanghai',
+  month: '2-digit',
+  day: '2-digit',
+  hour: '2-digit',
+  minute: '2-digit',
+  second: '2-digit',
+  hour12: false,
+});
+
 export function createUI({ cities, handlers = {} }) {
   const labelLayer = $('labels');
   const labels = new Map();
@@ -45,6 +56,7 @@ export function createUI({ cities, handlers = {} }) {
 
   timeboard.addEventListener('click', (event) => {
     if (event.target.closest('.tb-panel')) return;
+    if (timeboard.closest('#drawer')) return; // 在导航抽屉里始终展开
     openTimeboard();
   });
 
@@ -175,16 +187,7 @@ export function createUI({ cities, handlers = {} }) {
       });
     },
     updateTimeboard({ date, phaseLabel, altitude, azimuth, live, minutes }) {
-      const formatter = new Intl.DateTimeFormat('zh-CN', {
-        timeZone: 'Asia/Shanghai',
-        month: '2-digit',
-        day: '2-digit',
-        hour: '2-digit',
-        minute: '2-digit',
-        second: '2-digit',
-        hour12: false,
-      });
-      $('tb-time').textContent = formatter.format(date);
+      $('tb-time').textContent = BEIJING_FORMATTER.format(date);
       $('tb-phase').textContent = phaseLabel;
       $('tb-alt').textContent = `高度角 ${altitude >= 0 ? '+' : ''}${altitude.toFixed(1)}°　方位 ${azimuth.toFixed(0)}°`;
       $('tb-icon').style.transform = `rotate(${180 - azimuth}deg) translateY(${Math.max(-6, Math.min(6, -altitude / 12))}px)`;

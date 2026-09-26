@@ -9,8 +9,7 @@
       {
         "imports": {
           "three": "/vendor/three/build/three.module.js",
-          "three/addons/": "/vendor/three/examples/jsm/",
-          "@pixiv/three-vrm": "/vendor/three-vrm/three-vrm.module.js"
+          "three/addons/": "/vendor/three/examples/jsm/"
         }
       }
     </script>
@@ -20,24 +19,12 @@
     <div id="vignette" aria-hidden="true"></div>
     <div id="labels" aria-hidden="true"></div>
 
-    <div id="timeboard" class="glass">
-      <div class="tb-main">
-        <div id="tb-icon" class="tb-icon">☀</div>
-        <div class="tb-text">
-          <div id="tb-time">--:--:--</div>
-          <div class="tb-sub"><span id="tb-phase">白昼</span> · <span id="tb-mode">实时跟随</span></div>
-        </div>
-      </div>
-      <div id="tb-alt" class="tb-alt">高度角 +0.0°</div>
-      <div class="tb-panel">
-        <input id="tb-slider" type="range" min="0" max="1439" value="720" step="1" />
-        <button id="tb-live" type="button">回到实时</button>
-      </div>
+
+
+    <div id="live2d-stage">
+      <canvas id="live2d-canvas"></canvas>
+      <div id="live2d-credit">Powered by Live2D</div>
     </div>
-
-    <button id="mute-btn" class="ghost-btn" type="button">静音</button>
-
-    <canvas id="avatar-canvas"></canvas>
     <div id="speech-bubble"></div>
 
     <aside id="panel" class="glass">
@@ -65,8 +52,6 @@
       </div>
     </aside>
 
-    <div id="hint">拖动旋转 · 滚轮缩放 · 右键平移 · 点击光点进入城市</div>
-    <button id="route-btn" class="tool-btn" type="button">路线规划</button>
 
     <aside id="route-panel" class="glass">
       <header>
@@ -80,6 +65,138 @@
         <button id="route-clear" type="button" class="ghost-inline">清空</button>
       </div>
       <pre id="route-result"></pre>
+    </aside>
+
+
+    <div id="city-card" class="glass hidden">
+      <header>
+        <strong id="city-card-name">城市</strong>
+        <button id="city-card-close" type="button">✕</button>
+      </header>
+      <div id="city-card-meta" class="muted"></div>
+      <button id="city-card-enter" type="button" class="primary">进入城市规划</button>
+    </div>
+
+    <div id="planner" class="hidden">
+      <header class="planner-head">
+        <button id="planner-back" type="button">← 返回沙盘</button>
+        <strong id="planner-name">行程规划</strong>
+        <span id="planner-city" class="muted"></span>
+        <span class="planner-spacer"></span>
+        <select id="planner-trip"></select>
+        <button id="planner-new" type="button">新建行程</button>
+        <button id="planner-export" type="button">导出</button>
+        <button id="planner-import" type="button">导入</button>
+      </header>
+      <div id="planner-days" class="planner-days"></div>
+      <div class="planner-main">
+        <aside class="planner-side">
+          <div class="planner-row">
+            <div class="seg" id="planner-mode">
+              <button type="button" data-mode="walking">步行</button>
+              <button type="button" data-mode="taxi">打车</button>
+              <button type="button" data-mode="transit">公交</button>
+            </div>
+          </div>
+          <div class="planner-row">
+            <div class="seg" id="planner-objective">
+              <button type="button" data-objective="makespan">结束最早</button>
+              <button type="button" data-objective="travel">通勤最短</button>
+            </div>
+          </div>
+          <div class="planner-row">
+            <label>出发 <input id="planner-day-start" type="time" value="09:00" /></label>
+            <label>结束 <input id="planner-day-end" type="time" value="20:00" /></label>
+          </div>
+          <div class="planner-row">
+            <input id="planner-start-name" type="text" placeholder="出发点名称（酒店/车站）" />
+            <button id="planner-set-start" type="button">设为出发点</button>
+          </div>
+          <ol id="planner-stops" class="planner-stops"></ol>
+          <div class="planner-row">
+            <button id="planner-optimize" type="button" class="primary">重新优化</button>
+            <button id="planner-add-day" type="button">+ 增加一天</button>
+          </div>
+          <pre id="planner-plan" class="planner-plan"></pre>
+        </aside>
+        <main class="planner-map">
+          <div id="planner-map-canvas"></div>
+          <div class="planner-searchbar">
+            <input id="planner-search-input" type="search" placeholder="搜索地点，如：兵马俑" />
+            <button id="planner-search-btn" type="button">搜索</button>
+            <span id="planner-mapkind" class="muted"></span>
+            <button id="planner-selftest" type="button">环境自检</button>
+          </div>
+          <div id="planner-buckets" class="planner-buckets"></div>
+          <div id="planner-poi" class="planner-poi"></div>
+          <div id="planner-detail" class="planner-detail"></div>
+        </main>
+      </div>
+      <div id="planner-toast" class="planner-toast"></div>
+    </div>
+
+    <button id="nav-toggle" class="nav-toggle" type="button">☰ 导航</button>
+    <div id="drawer-backdrop"></div>
+    <aside id="drawer" class="glass">
+      <header class="drawer-head">
+        <strong>导航</strong>
+        <button id="drawer-close" type="button">✕</button>
+      </header>
+
+      <section class="drawer-section">
+        <h4>行程</h4>
+        <button id="planner-open" class="drawer-btn primary" type="button">打开行程规划</button>
+        <button id="route-btn" class="drawer-btn" type="button">路线规划（多城市巡游）</button>
+      </section>
+
+      <section class="drawer-section">
+        <h4>城市与省份</h4>
+        <input id="city-search" type="search" placeholder="搜索城市，回车定位" />
+        <label class="drawer-label" for="province-select">跳到省份</label>
+        <select id="province-select">
+          <option value="">选择省份…</option>
+        </select>
+        <button id="province-go" class="drawer-btn" type="button">飞到该省</button>
+        <p class="drawer-note" id="city-zoom-note">
+          全国视野只显示重点城市；<b>缩进到省级范围会自动显示该省的城市</b>，不需要手动切换。
+        </p>
+      </section>
+
+      <section class="drawer-section">
+        <h4>显示与声音</h4>
+        <label class="drawer-label" for="quality-select">画质</label>
+        <select id="quality-select" title="画质">
+          <option value="high">高（默认）</option>
+          <option value="medium">中</option>
+          <option value="low">低（更流畅）</option>
+        </select>
+        <button id="mute-btn" class="drawer-btn" type="button">静音</button>
+      </section>
+
+      <section class="drawer-section">
+        <h4>时间与日照</h4>
+        <div id="timeboard">
+          <div class="tb-main">
+            <div id="tb-icon" class="tb-icon">☀</div>
+            <div class="tb-text">
+              <div id="tb-time">--:--:--</div>
+              <div class="tb-sub"><span id="tb-phase">白昼</span> · <span id="tb-mode">实时跟随</span></div>
+            </div>
+          </div>
+          <div id="tb-alt" class="tb-alt">高度角 +0.0°</div>
+          <div class="tb-panel">
+            <input id="tb-slider" type="range" min="0" max="1439" value="720" step="1" />
+            <button id="tb-live" type="button">回到实时</button>
+          </div>
+        </div>
+      </section>
+
+      <section class="drawer-section">
+        <h4>操作说明</h4>
+        <div id="hint">
+          拖动旋转 · 滚轮缩放（放大到省级会显示该省城市）· 右键平移 · 点击城市进入规划 · 点击省份可飞到该省
+        </div>
+      </section>
     </aside>
 
     <div id="toast"></div>
@@ -106,6 +223,10 @@
         window.addEventListener('unhandledrejection', (event) => push('unhandledrejection', [event.reason && (event.reason.message || event.reason)]));
       })();
     </script>
+    <!-- Live2D 运行时（顺序不可变）：PixiJS → Cubism Core → pixi-live2d-display -->
+    <script src="/vendor/live2d/pixi.min.js"></script>
+    <script src="/vendor/live2d/live2dcubismcore.global.js"></script>
+    <script src="/vendor/live2d/cubism4.min.js"></script>
     <script type="module" src="/js/main.js"></script>
   </body>
 </html>

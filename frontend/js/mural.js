@@ -345,7 +345,7 @@ export function createMural() {
         color = mix(color, uInk, 0.18 * (1.0 - localNight));
         color += uWarm * (1.0 - localNight) * 0.06;
 
-        float grain = fbm(vUv * vec2(160.0, 120.0) + uTime * 0.01, 3);
+        float grain = fbm(vUv * vec2(160.0, 120.0) + uTime * 0.01, 2);
         color *= 0.9 + 0.2 * grain;
 
         gl_FragColor = vec4(color, texel.a * uDim);

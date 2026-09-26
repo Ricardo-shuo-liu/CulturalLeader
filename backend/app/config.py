@@ -26,6 +26,21 @@ class Settings(BaseSettings):
     admin_token: str = "dev-token"
     database_url: str = f"sqlite:///{DATA_DIR / 'app.db'}"
 
+    # 腾讯位置服务（https://lbs.qq.com）：WebService Key 仅后端使用；JS Key 提供给浏览器地图
+    tencent_map_key: str = ""
+    tencent_map_sk: str = ""  # Key 开启签名校验时填写
+    tencent_map_js_key: str = ""
+    # 若 Key 用「域名(Referer)授权」，把白名单里的域名填这里（后端请求会带上 Referer/Origin）
+    tencent_map_referer: str = ""
+    map_qps: float = 3.0
+    map_daily_limit: int = 5000
+    allow_estimate: bool = True
+    trips_dir: str = str(DATA_DIR / "trips")
+
+    @property
+    def map_ready(self) -> bool:
+        return bool(self.tencent_map_key.strip())
+
     @property
     def mock(self) -> bool:
         if self.mock_mode.strip().lower() == "on":

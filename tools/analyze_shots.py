@@ -129,6 +129,18 @@ def main() -> int:
     if warm_ratio < 0.25:
         failures.append(f"沙盘周围看不到壁画：暖色占比仅 {warm_ratio * 100:.0f}%")
 
+    # 数字人区域：截图右下角应出现模型（肤色/发色像素，且不是纯背景）
+    avatar_image = Image.open(OUT / "03_noon_1200.png").convert("RGB")
+    aw, ah = avatar_image.size
+    avatar_crop = avatar_image.crop((int(aw * 0.70), int(ah * 0.33), int(aw * 0.99), int(ah * 0.99)))
+    avatar_pixels = list(avatar_crop.resize((120, 140)).getdata())
+    skin = sum(1 for r, g, b in avatar_pixels if r > 120 and r > b + 18 and g > 80)
+    dark = sum(1 for r, g, b in avatar_pixels if r < 90 and g < 90 and b < 90)
+    total = len(avatar_pixels)
+    print(f"数字人区域：肤色像素 {skin / total * 100:.1f}%  深色（头发/轮廓）像素 {dark / total * 100:.1f}%")
+    if skin / total < 0.03 and dark / total < 0.12:
+        failures.append(f"右下角看不到数字人形象（肤色 {skin / total * 100:.1f}%、深色 {dark / total * 100:.1f}%）")
+
     opened = Image.open(OUT / "04_shanghai_opened.png").convert("L").resize((200, 140))
     data = list(opened.getdata())
     mean = statistics.fmean(data)

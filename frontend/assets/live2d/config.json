@@ -1,0 +1,59 @@
+{
+  "enabled": true,
+  "model": "model/Hiyori.model3.json",
+  "scale": 1.0,
+  "anchor": [
+    0.5,
+    1.0
+  ],
+  "position": [
+    0,
+    0
+  ],
+  "lipSync": {
+    "groupId": "LipSync",
+    "parameter": "ParamMouthOpenY",
+    "volume": 1.0,
+    "minOpen": 0.0,
+    "maxOpen": 1.0
+  },
+  "eyeBlink": {
+    "groupId": "EyeBlink"
+  },
+  "motions": {
+    "idle": {
+      "group": "Idle",
+      "index": 0
+    },
+    "speak": {
+      "group": "TapBody",
+      "index": null
+    },
+    "greet": {
+      "group": "TapBody",
+      "index": 0
+    }
+  },
+  "expressions": {
+    "neutral": "",
+    "happy": "F01"
+  },
+  "actions": {
+    "greeting": {
+      "motion": "greet",
+      "expression": "happy"
+    },
+    "guidance.invite": {
+      "motion": "speak",
+      "expression": "happy"
+    },
+    "speak.explain": {
+      "motion": "speak",
+      "expression": "neutral"
+    }
+  },
+  "night": {
+    "brightness": 0.8,
+    "saturation": 1.05
+  }
+}

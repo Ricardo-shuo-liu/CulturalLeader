@@ -9,7 +9,7 @@ from fastapi.staticfiles import StaticFiles
 
 from .config import FRONTEND_DIR
 from .db import init_db
-from .routers import admin, chat, cities, route, system
+from .routers import admin, chat, cities, geo, route, system, trips
 
 
 @asynccontextmanager
@@ -31,6 +31,8 @@ app.include_router(system.router)
 app.include_router(cities.router)
 app.include_router(chat.router)
 app.include_router(route.router)
+app.include_router(trips.router)
+app.include_router(geo.router)
 app.include_router(admin.router)
 
 for name in ("js", "css", "assets", "vendor", "js/data"):
