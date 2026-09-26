@@ -48,6 +48,70 @@ export function createMapView({ container, tmap, onStopClick }) {
   let boundary = null; // 当前城市的行政区边界（离线矢量底图）
   let boundaryCode = null;
   const view = { zoom: 1, offsetX: 0, offsetY: 0 };
+  // 腾讯静态图（WebServiceAPI 的 staticmap，只需服务端 Key）作为真实底图
+  const staticMap = { img: null, center: null, zoom: 12, loading: false, failed: false, timer: null };
+
+  const TILE = 256;
+  const worldSize = (z) => TILE * 2 ** z;
+  const mercX = (lng, z) => ((lng + 180) / 360) * worldSize(z);
+  const mercY = (lat, z) => {
+    const sin = Math.sin((Math.max(-85, Math.min(85, lat)) * Math.PI) / 180);
+    return (0.5 - Math.log((1 + sin) / (1 - sin)) / (4 * Math.PI)) * worldSize(z);
+  };
+
+  /** 根据当天点位的范围决定底图中心与缩放级别，然后拉取静态图。 */
+  function requestStaticMap() {
+    if (kind !== 'canvas' || staticMap.failed || !canvas) return;
+    const points = dayPoints();
+    if (!points.length) return;
+    const lngs = points.map((p) => p.lng);
+    const lats = points.map((p) => p.lat);
+    const center = { lng: (Math.min(...lngs) + Math.max(...lngs)) / 2, lat: (Math.min(...lats) + Math.max(...lats)) / 2 };
+    const spanLng = Math.max(Math.max(...lngs) - Math.min(...lngs), 0.01);
+    const spanLat = Math.max(Math.max(...lats) - Math.min(...lats), 0.01);
+    const span = Math.max(spanLng, spanLat) * 1.6;
+    const zoom = Math.max(4, Math.min(16, Math.round(Math.log2(360 / ((span * TILE) / canvas.width)))));
+    if (staticMap.center && staticMap.zoom === zoom && Math.abs(staticMap.center.lng - center.lng) < 1e-4) return;
+    staticMap.loading = true;
+    const url = `/api/geo/static-map?center=${center.lat},${center.lng}&zoom=${zoom}&width=${canvas.width}&height=${canvas.height}`;
+    const image = new Image();
+    image.onload = () => {
+      staticMap.img = image;
+      staticMap.center = center;
+      staticMap.zoom = zoom;
+      staticMap.loading = false;
+      renderCanvas();
+    };
+    image.onerror = () => {
+      staticMap.failed = true;
+      staticMap.loading = false;
+    };
+    image.src = url;
+  }
+
+  /** 把当前的缩放/平移折算成新的底图中心与级别，然后重新请求（保证底图与点位始终对齐）。 */
+  function commitView() {
+    if (kind !== 'canvas') return;
+    if (staticMap.center) {
+      const effZoom = staticMap.zoom + Math.log2(Math.max(view.zoom, 0.2));
+      const degPerPx = 360 / (TILE * 2 ** effZoom);
+      staticMap.center = {
+        lng: staticMap.center.lng - view.offsetX * degPerPx,
+        lat: staticMap.center.lat + view.offsetY * degPerPx,
+      };
+      staticMap.zoom = Math.max(4, Math.min(16, staticMap.zoom + Math.round(Math.log2(Math.max(view.zoom, 0.2)))));
+    }
+    view.zoom = 1;
+    view.offsetX = 0;
+    view.offsetY = 0;
+    staticMap.img = null;
+    scheduleStaticMap();
+  }
+
+  function scheduleStaticMap() {
+    window.clearTimeout(staticMap.timer);
+    staticMap.timer = window.setTimeout(requestStaticMap, 400);
+  }
 
   if (tmap) {
     map = new tmap.Map(container, {
@@ -75,6 +139,19 @@ export function createMapView({ container, tmap, onStopClick }) {
     }
   };
   window.addEventListener('resize', resize);
+  // 打开工作台时容器从隐藏变可见，尺寸 0 → 真实尺寸，会触发这里重算画布并重取底图
+  if (typeof ResizeObserver !== 'undefined') {
+    const lastSize = { w: 0, h: 0 };
+    const observer = new ResizeObserver(() => {
+      const rect = container.getBoundingClientRect();
+      if (Math.round(rect.width) === lastSize.w && Math.round(rect.height) === lastSize.h) return;
+      lastSize.w = Math.round(rect.width);
+      lastSize.h = Math.round(rect.height);
+      resize();
+      scheduleStaticMap();
+    });
+    observer.observe(container);
+  }
 
   function clearOverlays() {
     overlays.forEach((overlay) => overlay.setMap?.(null));
@@ -169,8 +246,14 @@ export function createMapView({ container, tmap, onStopClick }) {
     const minLat = Math.min(...lats) - 0.01;
     const maxLat = Math.max(...lats) + 0.01;
     const pad = 60;
-    const baseX = (lng) => pad + ((lng - minLng) / (maxLng - minLng)) * (width - pad * 2);
-    const baseY = (lat) => height - pad - ((lat - minLat) / (maxLat - minLat)) * (height - pad * 2);
+    const useStatic = Boolean(staticMap.img && staticMap.center);
+    const effZoom = staticMap.zoom + Math.log2(Math.max(view.zoom, 0.2));
+    const baseX = useStatic
+      ? (lng) => mercX(lng, effZoom) - mercX(staticMap.center.lng, effZoom) + width / 2
+      : (lng) => pad + ((lng - minLng) / (maxLng - minLng)) * (width - pad * 2);
+    const baseY = useStatic
+      ? (lat) => mercY(lat, effZoom) - mercY(staticMap.center.lat, effZoom) + height / 2
+      : (lat) => height - pad - ((lat - minLat) / (maxLat - minLat)) * (height - pad * 2);
     const cx = width / 2;
     const cy = height / 2;
     // 应用缩放与平移（以画布中心为缩放基准）
@@ -179,9 +262,24 @@ export function createMapView({ container, tmap, onStopClick }) {
       y: cy + (baseY(point.lat) - cy) * view.zoom + view.offsetY,
     });
 
-    // 1) 行政区边界（区县轮廓），让放大后有内容
+    // 0) 腾讯静态图底图（真实道路与地名）
+    if (useStatic) {
+      const ratio = effZoom - staticMap.zoom;
+      const scaled = staticMap.img;
+      const drawW = scaled.width * 2 ** ratio;
+      const drawH = scaled.height * 2 ** ratio;
+      ctx.drawImage(
+        scaled,
+        width / 2 - drawW / 2 + view.offsetX,
+        height / 2 - drawH / 2 + view.offsetY,
+        drawW,
+        drawH,
+      );
+    }
+
+    // 1) 行政区边界（区县轮廓）：有静态图时适当减淡
     if (boundary?.rings?.length) {
-      ctx.strokeStyle = 'rgba(127, 211, 224, 0.35)';
+      ctx.strokeStyle = useStatic ? 'rgba(127, 211, 224, 0.18)' : 'rgba(127, 211, 224, 0.35)';
       ctx.lineWidth = 1.2;
       boundary.rings.forEach((ring) => {
         ctx.beginPath();
@@ -316,6 +414,7 @@ export function createMapView({ container, tmap, onStopClick }) {
         view.offsetY = y - (y - cy) * applied - cy + view.offsetY * applied;
         view.zoom = next;
         renderCanvas();
+        commitView();
       },
       { passive: false },
     );
@@ -342,7 +441,10 @@ export function createMapView({ container, tmap, onStopClick }) {
       renderCanvas();
     });
     canvas.addEventListener('pointerup', () => {
-      panning = null;
+      if (panning) {
+        panning = null;
+        commitView();
+      }
     });
     canvas.addEventListener('pointercancel', () => {
       panning = null;
@@ -363,6 +465,11 @@ export function createMapView({ container, tmap, onStopClick }) {
         view.offsetX = 0;
         view.offsetY = 0;
         loadBoundary(day?.city?.adcode);
+        staticMap.center = null;
+        staticMap.img = null;
+        staticMap.failed = false;
+        resize();
+        scheduleStaticMap();
       }
       render();
     },

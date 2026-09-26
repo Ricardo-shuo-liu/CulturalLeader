@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 import sys
+import urllib.parse
 import urllib.request
 from pathlib import Path
 
@@ -30,7 +31,32 @@ def _public_ip() -> str:
     return "（查询失败，可在浏览器搜索「我的IP」查看）"
 
 
+def _check_static_map(client) -> str:
+    """静态图（WebServiceAPI 的 staticmap）：这一项通过就说明城内能显示腾讯真实底图。"""
+    import urllib.parse
+    import urllib.request
+
+    from backend.app.config import get_settings
+
+    settings = get_settings()
+    params = {"center": "34.62,112.454", "zoom": 12, "size": "400*300", "maptype": "roadmap", "key": settings.tencent_map_key}
+    signature = client._signature("ws/staticmap/v2/", params)
+    if signature:
+        params["sig"] = signature
+    url = "https://apis.map.qq.com/ws/staticmap/v2/?" + urllib.parse.urlencode(params)
+    try:
+        with urllib.request.urlopen(urllib.request.Request(url, headers={"User-Agent": "CulturalLeader/0.1"}), timeout=15) as response:  # noqa: S310
+            data = response.read()
+    except Exception as error:  # noqa: BLE001
+        return f"请求失败：{error}"
+    if data[:4] == b"\x89PNG":
+        return f"ok（{len(data) / 1024:.0f} KB PNG）"
+    text = data.decode("utf-8", errors="ignore")[:160]
+    raise MapError(text)
+
+
 CHECKS = [
+    ("静态图（真实底图）", lambda client: _check_static_map(client)),
     ("行政区划（district/list）", lambda client: client.district_list()),
     ("POI 搜索（place/search）", lambda client: client.poi_search("咖啡", city="北京市", offset=1)),
     (
@@ -87,13 +113,12 @@ def main() -> int:
                 print(f"[FAIL] {name} → {error}")
                 failures += 1
 
-    if not settings.tencent_map_js_key:
-        print("[WARN] 没有 JS Key：城内规划使用离线矢量底图（含区县边界、缩放平移、里程标注，功能完整）")
-        print("       想要腾讯地图底图再补一个 JS Key：控制台添加 Key 时**不需要勾选任何产品**（官方文档：")
-        print("       “Javascript API GL 并不需要勾选任何产品，直接创建 Key 就可以使用”）")
-        print("       然后在 .env 填写：TENCENT_MAP_JS_KEY=该Key")
-    else:
-        print("[PASS] JS Key 已配置（如控制台支持授权域名，建议填入 127.0.0.1 与线上域名）")
+    print(
+        "[INFO] 城内真实底图来自「静态图」接口（WebServiceAPI，只需上面的 Key）；"
+        "JS Key 是可选项，只用于把静态底图换成可自由拖拽的矢量地图"
+    )
+    if settings.tencent_map_js_key:
+        print("[PASS] 另已配置 JS Key（矢量地图模式）")
 
     print("-" * 60)
     if failures:

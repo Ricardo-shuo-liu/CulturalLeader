@@ -308,6 +308,37 @@ export function createTripPlanner({ onSpeak } = {}) {
     });
   }
 
+  async function ensureCityOptions() {
+    const select = $('planner-city-select');
+    if (!select) return;
+    if (!state.cityOptions) {
+      try {
+        const payload = await api('/api/geo/cities');
+        state.cityOptions = payload.cities || [];
+      } catch (error) {
+        state.cityOptions = [];
+      }
+      select.innerHTML = '';
+      state.cityOptions
+        .slice()
+        .sort((a, b) => a.name.localeCompare(b.name, 'zh-Hans-CN'))
+        .forEach((city) => {
+          const option = document.createElement('option');
+          option.value = city.adcode || city.name;
+          option.textContent = `${city.name}${city.province ? ` · ${city.province}` : ''}`;
+          option.dataset.lng = city.lng;
+          option.dataset.lat = city.lat;
+          option.dataset.adcode = city.adcode || '';
+          select.appendChild(option);
+        });
+    }
+    const day = currentDay();
+    if (day?.city?.name) {
+      const match = Array.from(select.options).find((option) => option.textContent.startsWith(day.city.name));
+      if (match) select.value = match.value;
+    }
+  }
+
   function renderAll() {
     const day = currentDay();
     $('planner-name').textContent = state.trip?.name || '行程规划';
@@ -533,6 +564,22 @@ export function createTripPlanner({ onSpeak } = {}) {
       state.dayIndex = nextIndex;
       await save(`已增加第 ${nextIndex} 天`);
     });
+    $('planner-city-select')?.addEventListener('change', async (event) => {
+      const option = event.target.selectedOptions[0];
+      if (!option) return;
+      const day = currentDay();
+      day.city = {
+        name: option.textContent.split(' · ')[0],
+        province: option.textContent.split(' · ')[1] || '',
+        adcode: option.dataset.adcode || '',
+        lng: Number(option.dataset.lng),
+        lat: Number(option.dataset.lat),
+      };
+      day.start = { name: '出发点', lng: day.city.lng, lat: day.city.lat, time: day.day_start || '09:00' };
+      await save(`第 ${day.index} 天城市改为 ${day.city.name}`);
+      state.mapView?.refresh?.();
+    });
+
     $('planner-trip')?.addEventListener('change', async (event) => {
       state.trip = await api(`/api/trips/${event.target.value}`);
       state.dayIndex = state.trip.days[0]?.index ?? 1;
@@ -631,6 +678,7 @@ export function createTripPlanner({ onSpeak } = {}) {
         }
       }
       await refreshTripList();
+      await ensureCityOptions();
       renderBuckets();
       renderAll();
       loadNearby(state.bucket);
