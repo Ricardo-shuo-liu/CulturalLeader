@@ -121,6 +121,12 @@ def optimize(flow_id: str, payload: OptimizeRequest) -> dict:
         flow["end"] = payload.end
     if not flow.get("points"):
         raise HTTPException(status_code=400, detail="这条流程还没有点位，先加入要去的点")
+    pending = [point["name"] for point in flow["points"] if point.get("status") == "pending"]
+    if pending:
+        raise HTTPException(
+            status_code=400,
+            detail=f"还有 {len(pending)} 个点位待定位（{'、'.join(pending[:3])}…），先在地图上点一下落位再优化",
+        )
     if not flow.get("start"):
         first = flow["points"][0]
         flow["start"] = {"name": "出发点", "lng": first["lng"], "lat": first["lat"], "time": flow.get("day_start")}

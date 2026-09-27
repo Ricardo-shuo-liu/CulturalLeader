@@ -33,6 +33,13 @@ NOISE = (
     "InvalidStateError",
 )
 
+SAMPLE_GUIDE = """西安3日游攻略｜第一次来照着走就行
+Day1 上午 钟楼 · 鼓楼 · 回民街
+下午 西安城墙永宁门 → 大雁塔
+Day2 兵马俑 09:00 玩3小时 / 华清宫 14:00 2小时
+Day3 陕西历史博物馆 上午 2小时，晚上 大唐芙蓉园
+"""
+
 STOPS = [
     {"name": "龙门石窟", "lng": 112.4770, "lat": 34.5550, "dwell_minutes": 150, "open_time": "08:00-18:00"},
     {"name": "白马寺", "lng": 112.6070, "lat": 34.7210, "dwell_minutes": 90, "open_time": "07:30-17:30"},
@@ -130,9 +137,10 @@ def main() -> int:
     try:
         flows_before = {item["id"] for item in api_get("/api/flows")["flows"]}
         guides_before = {item["id"] for item in api_get("/api/guides")["guides"]}
+        imports_before = {item["id"] for item in api_get("/api/imports")["imports"]}
     except Exception as error:  # noqa: BLE001
         print("无法读取初始数据（清理步骤会跳过）：", error)
-        flows_before, guides_before = set(), set()
+        flows_before, guides_before, imports_before = set(), set(), set()
 
     def check(name: str, condition: bool, detail: str = "") -> None:
         mark = "PASS" if condition else "FAIL"
@@ -173,8 +181,67 @@ def main() -> int:
             (not single["planner"]) and single["state"].get("city") == "beijing",
             f"city={single['state'].get('city')} · landmark={single['state'].get('landmark')}",
         )
+        narration = driver.execute_script("return document.getElementById('panel-narration').textContent || ''")
+        check("重点城市面板显示讲解词", len(narration) > 60, f"{len(narration)} 字")
         driver.execute_script("window.__cl.closeCity(); return true;")
         time.sleep(1.2)
+
+        # ── 3a1. 省会 / 自治区首府 / 特别行政区的地标（38 个）都能构建 ──
+        keys = driver.execute_script("return window.__cl.landmarkKeys()")
+        bad = []
+        for key in keys:
+            probe = driver.execute_script("return window.__cl.landmarkProbe(arguments[0])", key)
+            if (probe or {}).get("meshes", 0) <= 3:
+                bad.append(probe)
+        check(
+            "省会/首府/特别行政区地标全部可构建",
+            len(keys) >= 30 and not bad,
+            f"{len(keys)} 个地标 · 异常 {len(bad)}",
+        )
+        index_names = driver.execute_script(
+            "return window.__cl.cityIndex().filter((city) => city.landmark_key).map((city) => city.shortName)"
+        )
+        check(
+            "重点城市覆盖全部省会与台湾",
+            len(index_names) >= 34 and all(name in index_names for name in ("台北", "乌鲁木齐", "拉萨", "香港", "澳门")),
+            f"{len(index_names)} 座：{'、'.join(index_names[:8])} …",
+        )
+
+        # ── 3a3. 城市标签：不重叠、不过密、静止时不飘 ──
+        label_probe = driver.execute_script(
+            """
+            const labels = Array.from(document.querySelectorAll('.city-label[data-slug]'));
+            const visible = labels.filter((el) => Number(getComputedStyle(el).opacity) > 0.5);
+            const rects = visible.map((el) => {
+              const r = el.getBoundingClientRect();
+              return { x: Math.round(r.left), y: Math.round(r.top), w: Math.round(r.width), h: Math.round(r.height) };
+            });
+            let overlaps = 0;
+            for (let i = 0; i < rects.length; i += 1) {
+              for (let k = i + 1; k < rects.length; k += 1) {
+                const a = rects[i]; const b = rects[k];
+                const dx = Math.min(a.x + a.w, b.x + b.w) - Math.max(a.x, b.x);
+                const dy = Math.min(a.y + a.h, b.y + b.h) - Math.max(a.y, b.y);
+                if (dx > 6 && dy > 6) overlaps += 1;
+              }
+            }
+            return { visible: visible.length, overlaps };
+            """
+        )
+        check(
+            "全国视野下城市标签不重叠、不过密",
+            label_probe["overlaps"] == 0 and 6 <= label_probe["visible"] <= 22,
+            f"显示 {label_probe['visible']} 个 · 重叠 {label_probe['overlaps']} 对",
+        )
+        drift = driver.execute_script(
+            """
+            const el = document.querySelector('.city-label[data-slug]');
+            const read = () => `${Math.round(el.getBoundingClientRect().left)},${Math.round(el.getBoundingClientRect().top)}`;
+            const before = read();
+            return new Promise((resolve) => setTimeout(() => resolve({ before, after: read() }), 320));
+            """
+        )
+        check("静止时城市标签不飘（无亚像素抖动）", drift["before"] == drift["after"], f"{drift['before']} → {drift['after']}")
 
         # ── 3a2. 导航按钮：抽屉打开时收起，关闭后再出现 ──
         driver.execute_script("document.getElementById('nav-toggle').click(); return true;")
@@ -225,15 +292,15 @@ def main() -> int:
         reopened = driver.execute_script("return window.__cl.planner().open")
         check("返回沙盘后流程编辑已关闭", not reopened, f"planner.open={reopened}")
 
-        # ── 4. 双击地级市 → 打开流程编辑器 ──
+        # ── 4. 双击普通地级市（未收录讲解的城市）→ 打开流程编辑器 ──
         driver.execute_script("return window.__cl.flyProvince('河南')")
         time.sleep(3)
-        target = driver.execute_script("return window.__cl.cityScreen('洛阳')")
-        check("洛阳在省级视野中可见", bool(target), str(target))
+        target = driver.execute_script("return window.__cl.cityScreen('南阳')")
+        check("地级市（南阳）在省级视野中可见", bool(target), str(target))
         driver.execute_script(DOUBLE_CLICK_CITY, target)
         time.sleep(2.5)
         opened = driver.execute_script("return window.__cl.planner().open")
-        check("双击洛阳进入流程编辑", bool(opened), f"planner.open={opened}")
+        check("双击普通地级市进入流程编辑", bool(opened), f"planner.open={opened}")
         if not opened:
             raise SystemExit(1)
 
@@ -429,6 +496,45 @@ def main() -> int:
             f"{points_before} → {points_after} 点 · 新点 {last_point}",
         )
 
+        # ── 5b2. 规划面板里数字人可见，并且能真实点开对话问问题 ──
+        human_state = driver.execute_script(
+            """
+            const stage = document.getElementById('live2d-stage');
+            const rect = stage.getBoundingClientRect();
+            const style = getComputedStyle(stage);
+            return {
+              visible: style.display !== 'none' && Number(style.opacity) > 0 && rect.width > 60,
+              z: style.zIndex,
+              inViewport: rect.left < window.innerWidth && rect.top < window.innerHeight,
+              model: window.__cl.human().hasModel,
+            };
+            """
+        )
+        check(
+            "进入规划后数字人仍在画面里",
+            bool(human_state["visible"]) and bool(human_state["inViewport"]) and bool(human_state["model"]),
+            f"z={human_state['z']} · 模型={human_state['model']}",
+        )
+        dock = driver.execute_script("return window.__cl.panelChat()")
+        check("对话面板绑定当前城市", (dock.get("city") or {}).get("name") == "洛阳市" or (dock.get("city") or {}).get("name") == "洛阳", str(dock.get("city")))
+        driver.execute_script(
+            "const input = document.getElementById('planner-chat-input'); input.value = '这里最值得看什么？'; return true;"
+        )
+        ActionChains(driver).move_to_element(driver.find_element("id", "planner-chat-send")).click().perform()
+        answer = ""
+        for _ in range(40):
+            time.sleep(0.5)
+            answer = driver.execute_script("return window.__cl.panelChat().last || ''")
+            if answer:
+                break
+        check("真实点击发送 → 数字人回答出现在面板里", len(answer) > 8, answer[:60])
+        mouth = driver.execute_script("return window.__cl.humanProbe()")
+        check(
+            "规划面板里数字人会开口说话",
+            bool(mouth and (mouth.get("speaking") or (mouth.get("mouthValue") or 0) > 0.02)),
+            f"口型={mouth.get('mouthValue') if mouth else None} speaking={mouth.get('speaking') if mouth else None}",
+        )
+
         # ── 5c. 「取消」不能再弹出新的取点卡片 ──
         points_before_cancel = points_after
         map_element = driver.find_element("id", "planner-map-canvas")
@@ -590,18 +696,76 @@ def main() -> int:
             )
             driver.save_screenshot(str(OUT / "12_share.png"))
 
+        # ── 8b. 抄作业：粘贴正文 → 三步向导 → 生成计划块与草稿攻略 ──
+        driver.get(f"{BASE}/")
+        time.sleep(6)
+        driver.execute_script("window.__cl.importOpen(); return true;")
+        time.sleep(1)
+        driver.execute_script("document.getElementById('import-text').value = arguments[0]; return true;", SAMPLE_GUIDE)
+        driver.execute_script("document.getElementById('import-parse').click(); return true;")
+        import_state = {}
+        for _ in range(60):
+            time.sleep(0.5)
+            import_state = driver.execute_script("return window.__cl.importState();")
+            if import_state.get("days"):
+                break
+        check(
+            "抄作业：解析出多天行程",
+            (import_state.get("days") or 0) >= 2 and (import_state.get("places") or 0) >= 5,
+            f"{import_state.get('days')} 天 · {import_state.get('places')} 地点 · 待定位 {import_state.get('pending')}",
+        )
+        driver.execute_script("document.getElementById('import-review-next').click(); return true;")
+        time.sleep(4)
+        step3 = driver.execute_script(
+            "return { step3: !document.getElementById('import-step3').classList.contains('hidden'), pending: document.querySelectorAll('.import-pending-item').length };"
+        )
+        check("抄作业：地图确认步骤可用", bool(step3["step3"]) and step3["pending"] > 0, f"待定位 {step3['pending']} 个")
+        driver.execute_script("document.querySelectorAll('.import-pending-item button')[0].click(); return true;")
+        time.sleep(0.8)
+        center = driver.execute_script(
+            "const r = document.getElementById('import-map').getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + r.height / 2 };"
+        )
+        driver.execute_script(
+            """
+            const target = document.querySelector('#import-map canvas') || document.getElementById('import-map');
+            const opts = { bubbles: true, clientX: arguments[0], clientY: arguments[1], button: 0 };
+            target.dispatchEvent(new MouseEvent('mousedown', { ...opts, buttons: 1 }));
+            target.dispatchEvent(new MouseEvent('mouseup', { ...opts, buttons: 0 }));
+            target.dispatchEvent(new MouseEvent('click', opts));
+            return true;
+            """,
+            center["x"],
+            center["y"],
+        )
+        time.sleep(2.5)
+        left = driver.execute_script("return document.querySelectorAll('.import-pending-item').length")
+        check("抄作业：待定位点可在地图上落位", left == step3["pending"] - 1, f"{step3['pending']} → {left}")
+        driver.execute_script("document.getElementById('import-commit').click(); return true;")
+        for _ in range(60):
+            time.sleep(0.5)
+            if driver.execute_script("return window.__cl.guide().open"):
+                break
+        blocks = driver.execute_script("return document.querySelectorAll('#guide-items .guide-item').length")
+        check("抄作业：生成计划块并写入攻略", blocks >= 2, f"攻略里 {blocks} 个块")
+
         # ── 9. 降级路径：无 JS Key 时的自建矢量底图也要能拖拽/缩放/选中 ──
         driver.get(f"{BASE}/?map=canvas")
         time.sleep(6)
-        driver.execute_script("return window.__cl.flyProvince('河南')")
+        # 洛阳已经是重点城市（有 DOM 标签），双击标签同样要进流程编辑
+        opened_fallback = driver.execute_script(
+            """
+            const label = document.querySelector('.city-label[data-slug="luoyang"]');
+            if (!label) return false;
+            label.click();
+            window.setTimeout(() => label.click(), 90);
+            return true;
+            """
+        )
         time.sleep(3)
-        target = driver.execute_script("return window.__cl.cityScreen('洛阳')")
-        driver.execute_script(DOUBLE_CLICK_CITY, target)
-        time.sleep(2.5)
         fallback = driver.execute_script("return window.__cl.plannerDebug()")
         check(
             "降级：无 Key 时使用自建矢量底图",
-            fallback.get("kind") == "canvas" and (fallback.get("points") or 0) > 0,
+            bool(opened_fallback) and fallback.get("kind") == "canvas" and (fallback.get("points") or 0) > 0,
             f"引擎={fallback.get('kind')} · {fallback.get('points')} 个点位",
         )
         before = fallback.get("center")
@@ -681,7 +845,12 @@ def main() -> int:
                 if item["id"] not in guides_before:
                     if api_delete(f"/api/guides/{item['id']}"):
                         removed_guides += 1
-            print(f"已清理验收数据：流程 {removed_flows} 条 · 攻略 {removed_guides} 份")
+            removed_imports = 0
+            for item in api_get("/api/imports")["imports"]:
+                if item["id"] not in imports_before:
+                    if api_delete(f"/api/imports/{item['id']}"):
+                        removed_imports += 1
+            print(f"已清理验收数据：流程 {removed_flows} 条 · 攻略 {removed_guides} 份 · 导入 {removed_imports} 条")
         except Exception as error:  # noqa: BLE001
             print("验收数据清理失败（可手动删除 data/flows、data/guides 里的测试数据）：", error)
         driver.quit()

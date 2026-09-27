@@ -49,12 +49,26 @@ def split_sentences(buffer: str) -> tuple[list[str], str]:
 
 @router.post("/chat")
 async def chat(payload: ChatRequest, db: Session = Depends(get_db)) -> StreamingResponse:
-    city = db.scalar(select(City).where(City.slug == payload.city_slug))
+    city = db.scalar(select(City).where(City.slug == payload.city_slug)) if payload.city_slug else None
     if city is None:
-        raise HTTPException(status_code=404, detail="城市不存在")
+        # 没收录的城市：用请求里带的名字“临时成城”，照样能问（不再直接 404）
+        name = (payload.city_name or "").strip()
+        if not name:
+            raise HTTPException(status_code=404, detail="城市不存在")
+        city = City(
+            slug=payload.city_slug or f"adhoc-{uuid.uuid4().hex[:8]}",
+            name=name,
+            province="",
+            lng=0.0,
+            lat=0.0,
+            landmark_key="generic",
+        )
+        city.summary = f"{name}：用户在地图上打开的城市（本地资料库暂未收录，可结合常识介绍，不确定的要说明）。"
+        city.tags = "[]"
+        city.narration = ""
 
     city_id = city.id
-    knowledge: list[Knowledge] = list(city.knowledge)
+    knowledge: list[Knowledge] = list(city.knowledge) if city_id else []
     session_id = payload.session_id or uuid.uuid4().hex
     session = db.get(ChatSession, session_id)
     if session is None:

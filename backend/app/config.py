@@ -37,6 +37,7 @@ class Settings(BaseSettings):
     allow_estimate: bool = True
     trips_dir: str = str(DATA_DIR / "trips")
     flows_dir: str = str(DATA_DIR / "flows")
+    imports_dir: str = str(DATA_DIR / "imports")
     guides_dir: str = str(DATA_DIR / "guides")
 
     @property

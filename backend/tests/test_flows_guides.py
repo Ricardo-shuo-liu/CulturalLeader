@@ -198,6 +198,61 @@ def test_guide_api_share_and_readonly_page(client: TestClient, isolated_store):
     assert client.get(f"/api/guides/{guide['id']}").status_code == 404
 
 
+def test_capitals_sync_covers_every_province(tmp_path, monkeypatch):
+    """省会 / 自治区首府 / 直辖市 / 特别行政区都要有地标与讲解，并且幂等。"""
+    from sqlalchemy import create_engine, select
+    from sqlalchemy.orm import Session, sessionmaker
+
+    from backend.app.data.capitals import CAPITALS
+    from backend.app.db import Base
+    from backend.app.models import City, Knowledge
+
+    # 这些城市在原种子里已有更详细的讲解，CAPITALS 里不重复
+    existing = {"北京", "上海", "广州", "西安", "成都"}
+    required = {
+        "天津", "重庆", "石家庄", "太原", "呼和浩特", "沈阳", "长春", "哈尔滨", "南京", "杭州",
+        "合肥", "福州", "南昌", "济南", "郑州", "武汉", "长沙", "南宁", "海口", "贵阳", "昆明",
+        "拉萨", "兰州", "西宁", "银川", "乌鲁木齐", "香港", "澳门", "台北",
+    }
+    names = {item["name"] for item in CAPITALS}
+    assert required <= names, f"缺少省级城市：{required - names}"
+    assert "台北" in names, "台湾必须包含在内"
+    assert not (names & existing), "已有城市不要在 CAPITALS 里重复"
+    keys = [item["landmark_key"] for item in CAPITALS]
+    assert len(keys) == len(set(keys)), "每座城市都要有独立的地标 key"
+    for item in CAPITALS:
+        assert len(item["narration"]) > 40, f"{item['name']} 的讲解太短"
+        assert len(item["knowledge"]) >= 2, f"{item['name']} 至少要有两条问答"
+
+    # 幂等写入：跑两次数量不变
+    db_file = tmp_path / "capitals.db"
+    # 用独立的临时库，避免影响其它测试共享的测试库
+    local_engine = create_engine(f"sqlite:///{db_file}", connect_args={"check_same_thread": False}, future=True)
+    Base.metadata.create_all(local_engine)
+    Local = sessionmaker(bind=local_engine, class_=Session, expire_on_commit=False)
+    from backend.app.seed import seed_if_empty, sync_capitals
+
+    with Local() as db:
+        seed_if_empty(db)
+        first = sync_capitals(db)
+        second = sync_capitals(db)
+        assert first == len(CAPITALS) and second == 0, f"第一次 {first} / 第二次 {second}"
+        assert db.scalar(select(City).where(City.name == "台北")).landmark_key == "taipei_101"
+        assert db.scalar(select(Knowledge).limit(1)) is not None
+    local_engine.dispose()
+
+
+def test_chat_accepts_city_without_record(client: TestClient, isolated_store):
+    """没收录的城市（地图上随手双击的地级市）也要能问，不再直接 404。"""
+    with client.stream(
+        "POST", "/api/chat", json={"city_slug": "", "city_name": "某某县", "message": "这里有什么？"}
+    ) as response:
+        assert response.status_code == 200, response.read()
+        body = "".join(chunk for chunk in response.iter_text())
+    assert "某某县" in body
+    assert client.post("/api/chat", json={"city_slug": "", "message": "你好"}).status_code == 404
+
+
 def test_static_map_route_is_gone(client: TestClient):
     assert client.get("/api/geo/static-map", params={"center": "34,108"}).status_code == 404
 

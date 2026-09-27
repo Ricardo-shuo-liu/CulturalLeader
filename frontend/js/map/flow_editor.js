@@ -40,7 +40,7 @@ async function api(path, options = {}) {
   return payload;
 }
 
-export function createFlowEditor({ onSpeak } = {}) {
+export function createFlowEditor({ onSpeak, onCityChange, resolveSlug } = {}) {
   const state = {
     flows: [],
     flow: null,
@@ -48,6 +48,7 @@ export function createFlowEditor({ onSpeak } = {}) {
     pois: [],
     selected: null,
     pickStart: false,
+    lastCityName: null,
     mapView: null,
     map: null,
     mapTried: false,
@@ -153,6 +154,10 @@ export function createFlowEditor({ onSpeak } = {}) {
       },
       // 在真实地图上随手点一个位置 → 直接加进这条流程；「点选起点」模式下则设为出发点
       onMapClick: (point) => {
+        if (state.locatePoint) {
+          applyPendingLocation(point);
+          return;
+        }
         if (state.pickStart) {
           applyStartFromMap(point);
           return;
@@ -237,6 +242,18 @@ export function createFlowEditor({ onSpeak } = {}) {
       nameInput.placeholder = '点位名称';
     }
     nameInput.focus();
+  }
+
+  /** 给导入进来的「待定位」点位落位。 */
+  async function applyPendingLocation(point) {
+    const flow = state.flow;
+    const target = (flow?.points || []).find((item) => item.id === state.locatePoint);
+    if (!flow || !target || !Number.isFinite(point?.lng)) return;
+    state.locatePoint = null;
+    target.lng = point.lng;
+    target.lat = point.lat;
+    target.status = 'confirmed';
+    await save(`已定位「${target.name}」`);
   }
 
   /** 把「在地图上点选」的位置设为出发点。 */
@@ -346,16 +363,19 @@ export function createFlowEditor({ onSpeak } = {}) {
     flow.points.forEach((point, index) => {
       const item = document.createElement('li');
       item.className = `planner-stop${state.selected === point.id ? ' active' : ''}`;
+      const pending = point.status === 'pending' || !Number.isFinite(point.lng) || !Number.isFinite(point.lat);
+      item.className = `planner-stop${state.selected === point.id ? ' active' : ''}${pending ? ' pending' : ''}`;
       item.innerHTML = `
         <span class="planner-stop-index">${index + 1}</span>
         <div class="planner-stop-main">
-          <strong>${point.name}</strong>
-          <small>${point.dwell_minutes || 60} 分钟${point.fixed_time ? ` · 固定 ${point.fixed_time}` : ''}${
+          <strong>${point.name}${pending ? ' <span class="stop-pending">待定位</span>' : ''}</strong>
+          <small>${pending ? '点右侧「定位」后在地图上点一下' : `${point.dwell_minutes || 60} 分钟${point.fixed_time ? ` · 固定 ${point.fixed_time}` : ''}${
         point.open_time ? ` · ${point.open_time}` : ''
-      }${point.locked ? ' · 已锁定' : ''}</small>
+      }${point.locked ? ' · 已锁定' : ''}`}</small>
         </div>`;
       const tools = document.createElement('div');
       tools.className = 'planner-stop-tools';
+      let toolsLocate = null;
       const up = document.createElement('button');
       up.textContent = '↑';
       up.disabled = index === 0;
@@ -364,6 +384,16 @@ export function createFlowEditor({ onSpeak } = {}) {
       down.textContent = '↓';
       down.disabled = index === flow.points.length - 1;
       down.addEventListener('click', () => movePoint(index, index + 1));
+      const locateBtn = document.createElement('button');
+      locateBtn.textContent = '📍';
+      locateBtn.title = '在地图上点选这个点的位置';
+      if (!pending) locateBtn.classList.add('muted');
+      locateBtn.addEventListener('click', () => {
+        state.locatePoint = pending ? point.id : null;
+        toast(pending ? `在地图上点一下「${point.name}」的位置` : '这个点已经定位好了');
+        renderPoints();
+      });
+      toolsLocate = locateBtn;
       const startBtn = document.createElement('button');
       startBtn.textContent = '起';
       startBtn.title = '把这里设为出发点';
@@ -384,7 +414,7 @@ export function createFlowEditor({ onSpeak } = {}) {
         flow.points.splice(index, 1);
         save('已移除点位');
       });
-      tools.append(up, down, startBtn, lock, del);
+      tools.append(up, down, locateBtn || toolsLocate, startBtn, lock, del);
       item.appendChild(tools);
       item.addEventListener('click', (event) => {
         if (event.target.closest('.planner-stop-tools')) return;
@@ -473,6 +503,12 @@ export function createFlowEditor({ onSpeak } = {}) {
 
   function renderAll() {
     const flow = state.flow;
+    // 通知外部（数字人对话面板）当前在规划哪座城市
+    const cityName = flow?.city?.name || '';
+    if (cityName !== state.lastCityName) {
+      state.lastCityName = cityName;
+      onCityChange?.({ ...(flow?.city || {}), slug: resolveSlug?.(cityName) || '' });
+    }
     if ($('planner-name')) $('planner-name').value = flow?.name || '';
     if ($('planner-city')) {
       const city = flow?.city || {};

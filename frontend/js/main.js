@@ -13,7 +13,10 @@ import { createCityLayer } from './map/city_layer.js';
 import { createProvinceLayer } from './map/province_layer.js';
 import { createFlowEditor } from './map/flow_editor.js';
 import { createGuideBuilder } from './map/guide_builder.js';
+import { createPanelChat } from './panel_chat.js';
+import { createImportWizard } from './import_wizard.js';
 import { cityCardMeta, findCity, loadCityIndex } from './map/city_index.js';
+import { LANDMARKS_CN } from './data/landmarks-cn.js';
 import { applyLandmarkLighting, createLandmarkScene, landmarkFactory } from './landmarks.js';
 import { createFayHuman } from './fay/fay_live2d.js';
 import { VoiceIO } from './voice.js';
@@ -76,6 +79,37 @@ async function boot() {
 
   // 统一城市索引：重点城市（有讲解与 3D 地标）+ 全国 300+ 地级市
   const cityIndex = await loadCityIndex();
+
+  // 重点城市标签的显示优先级：
+  // ① 层级：直辖市/特别行政区 > 省会/自治区首府 > 旅游名城
+  // ② 同级按「离其他重点城市越远越先放」，这样拉萨、乌鲁木齐、西宁、银川这些边远省会
+  //    在全国视野里一定露得出来，被挤掉的都是东部密集区里优先级较低的。
+  // ③ 最后按数据顺序（sort_order）稳定排序。
+  const keyTierWeight = (name) => {
+    const tier = findCity(cityIndex, name)?.tier || 'prefecture';
+    if (tier === 'municipality' || tier === 'sar') return 3;
+    if (tier === 'capital' || tier === 'subprovincial') return 2;
+    return 1;
+  };
+  const labelPriority = cities
+    .map((city, index) => {
+      // 用对称的球面距离：早先按城市自身纬度做近似，会出现「谁离谁更远」不自洽，
+      // 导致北京/天津这种紧邻城市里反而是天津先占位、北京被隐藏。
+      let isolation = Infinity;
+      cities.forEach((other) => {
+        if (other === city) return;
+        const rad = Math.PI / 180;
+        const dLat = (other.lat - city.lat) * rad;
+        const dLng = (other.lng - city.lng) * rad;
+        const h =
+          Math.sin(dLat / 2) ** 2 +
+          Math.cos(city.lat * rad) * Math.cos(other.lat * rad) * Math.sin(dLng / 2) ** 2;
+        isolation = Math.min(isolation, 2 * Math.asin(Math.min(1, Math.sqrt(h))));
+      });
+      return { index, weight: keyTierWeight(city.name), isolation: Number.isFinite(isolation) ? isolation : 0 };
+    })
+    .sort((a, b) => b.weight - a.weight || b.isolation - a.isolation || a.index - b.index)
+    .map((item) => item.index);
 
   const handlers = {};
   const ui = createUI({ cities, handlers });
@@ -182,10 +216,26 @@ async function boot() {
   };
 
   // 城市游玩流程编辑器（双击城市进入）：真实可拖拽地图 + LKH TSPTW 重新优化
-  const planner = createFlowEditor({ onSpeak: narrate });
+  // 规划时数字人依然站在面板里，可以边排点位边问问题（panelChat 稍后创建）
+  let panelChat = null;
+  const planner = createFlowEditor({
+    onSpeak: narrate,
+    resolveSlug: (name) => findCity(cityIndex, name)?.slug || '',
+    onCityChange: (city) => panelChat?.setCity(city),
+  });
 
   // 我的攻略：把多城流程组合成整体行程（总里程 / 总时长 / 逐日安排）
   const guide = createGuideBuilder({ onSpeak: narrate });
+
+  // 抄作业：粘贴攻略链接/正文/截图 → 生成计划块与草稿攻略
+  const importWizard = createImportWizard({
+    onCommitted: async (payload) => {
+      toggleDrawer(false);
+      await guide.open();
+      if (payload?.guideId) await guide.openGuide(payload.guideId);
+      ui.toast(`已生成 ${payload?.flowIds?.length || 0} 个计划块，可在真实地图上继续编辑`);
+    },
+  });
 
   // 地标与内场灯光
   const landmark = createLandmarkScene();
@@ -222,6 +272,29 @@ async function boot() {
     announce: (message) => ui.toast(message),
   });
 
+  // 规划面板里的「问数字人」：共用同一个数字人与语音链路
+  panelChat = createPanelChat({
+    onAsk: (text) => askInPanel(text),
+    onMicStart: () => voice.startRecording(),
+    onMicEnd: () => voice.stopRecording(),
+  });
+
+  async function askInPanel(text) {
+    if (!text) return;
+    try {
+      panelChat.begin();
+      const slug = panelChat.city?.slug || '';
+      const name = panelChat.city?.name || '';
+      if (!name && !slug) {
+        panelChat.addSystem('先双击一座城市，再问我这里的情况。');
+        return;
+      }
+      panelChat.sessionId = await voice.ask(slug, text, panelChat.sessionId, name);
+    } catch (error) {
+      panelChat.addSystem(error.message || '提问失败');
+    }
+  }
+
   let muted = false;
   let sessionId = null;
   let activeCity = null;
@@ -229,15 +302,23 @@ async function boot() {
   let backdropTarget = 0;
 
   const voice = new VoiceIO({
-    onToken: (text) => ui.appendToken(text),
+    onToken: (text) => {
+      ui.appendToken(text);
+      panelChat?.appendToken(text);
+    },
     onSentence: (text) => {
       voice.enqueue(text);
       ui.setSpeech(text, muted);
+      panelChat?.setSpeech(text);
     },
-    onDone: () => ui.endAssistant(),
+    onDone: () => {
+      ui.endAssistant();
+      panelChat?.end();
+    },
     onError: (message) => {
       ui.toast(message);
       ui.endAssistant();
+      panelChat?.addSystem(message);
     },
     onSpeakStart: (text) => ui.setSpeech(text, muted),
     onIdle: () => {
@@ -332,6 +413,8 @@ async function boot() {
       console.warn('[stage] 城市详情加载失败', error);
     }
     if (activeCity.slug !== slug) return;
+    // 列表接口不带讲解词，详情拿到后要把它补进左侧面板（否则“讲解词”一栏一直是空的）
+    ui.setNarration(activeCity.narration || activeCity.summary || '');
     if (activeCity.narration) {
       if (!muted) voice.enqueue(activeCity.narration);
       ui.setSpeech(activeCity.narration, muted);
@@ -525,10 +608,17 @@ async function boot() {
     camera.updateProjectionMatrix();
     borderGlow.material.resolution.set(width, height);
     borderMain.material.resolution.set(width, height);
+    // 在流程编辑/攻略面板里数字人改用小尺寸（CSS 位置见 map_ui.css），避免被放大糊掉
+    const inPanel = document.body.classList.contains('planner-open');
     human.resize(
-      Math.round(Math.min(440, Math.max(220, width * 0.3))),
-      Math.round(Math.min(600, Math.max(300, height * 0.74))),
+      inPanel ? 236 : Math.round(Math.min(440, Math.max(220, width * 0.3))),
+      inPanel ? 330 : Math.round(Math.min(600, Math.max(300, height * 0.74))),
     );
+  }
+
+  // 面板开合会切 body 的 class：跟着重算数字人尺寸
+  if (typeof MutationObserver !== 'undefined') {
+    new MutationObserver(() => resize()).observe(document.body, { attributes: true, attributeFilter: ['class'] });
   }
 
   // ── 导航抽屉开关 ──
@@ -552,6 +642,10 @@ async function boot() {
   document.getElementById('guide-open')?.addEventListener('click', () => {
     toggleDrawer(false);
     guide.open();
+  });
+
+  document.getElementById('guide-import')?.addEventListener('click', () => {
+    importWizard.open();
   });
 
   // 省份选择：直接飞到指定省份（下拉 + 按钮）
@@ -771,7 +865,7 @@ async function boot() {
     const cameraDistance = camera.position.length();
     cityLayer.setScale(Math.max(0.32, Math.min(1.15, cameraDistance / 6.4)));
     cityLayer.update(camera, now / 1000, window.innerWidth, window.innerHeight);
-    cityLayer.updateLabels(cityLayer.screenPositions(camera, window.innerWidth, window.innerHeight), window.innerWidth, window.innerHeight);
+    // 城市图层标签统一放在渲染之后、和重点城市标签共用一套占位网格（见下方 labelMask）
     provinceLayer.update(cityLayer.state.viewKm || Infinity);
     perf.frame = (perf.frame || 0) + 1;
     if (perf.frame % 8 === 0) {
@@ -786,7 +880,24 @@ async function boot() {
 
     renderer.render(scene, camera);
 
-    ui.updateLabels(cityPoints.screenPositions(camera, window.innerWidth, window.innerHeight));
+    // 重点城市标签先占位，城市图层再按同一套格子避让，两层标签不会叠在一起
+    // 地名：全国视野下 34 个省级城市全部参与（按优先级占位，放不下才隐藏低优先级），
+    // 缩进到省级后字号变大；看地标或视角压得很低时整体收起。
+    const viewKm = cityLayer.state.viewKm || 0;
+    const polar = controls.getPolarAngle ? controls.getPolarAngle() : 0;
+    const hideCityNames = landmarkProgress > 0.02 || polar > 1.16;
+    const labelMask = ui.updateLabels(cityPoints.screenPositions(camera, window.innerWidth, window.innerHeight), {
+      order: hideCityNames ? [] : labelPriority,
+      hoverIndex,
+      scale: viewKm > 3000 ? 'far' : 'near',
+    });
+    cityLayer.updateLabels(
+      cityLayer.screenPositions(camera, window.innerWidth, window.innerHeight),
+      window.innerWidth,
+      window.innerHeight,
+      labelMask,
+      hideCityNames,
+    );
     ui.updateTimeboard({
       date,
       phaseLabel: state.phaseLabel,
@@ -865,10 +976,40 @@ async function boot() {
     plannerDebug: () => planner.debug(),
     plannerFit: () => planner.fit(),
     plannerMap: () => planner.mapInstance(),
+    landmarkKeys: () => Object.keys(LANDMARKS_CN),
+    landmarkProbe: (key) => {
+      const group = landmarkFactory(key);
+      let meshes = 0;
+      group.traverse((node) => {
+        if (node.isMesh) meshes += 1;
+      });
+      return { key, meshes };
+    },
+    panelChat: () => ({
+      city: panelChat?.city || null,
+      messages: document.querySelectorAll('#planner-chat-log .pc-msg').length,
+      last: document.querySelector('#planner-chat-log .pc-msg.assistant')?.textContent || '',
+    }),
+    importOpen: () => importWizard.open(),
+    importClose: () => importWizard.close(),
+    importState: () => ({
+      open: importWizard.isOpen(),
+      id: importWizard.record?.id || null,
+      days: (importWizard.record?.days || []).length,
+      places: (importWizard.record?.days || []).reduce((sum, day) => sum + (day.places || []).length, 0),
+      pending: (importWizard.record?.days || []).reduce(
+        (sum, day) => sum + (day.places || []).filter((place) => place.status !== 'confirmed').length,
+        0,
+      ),
+    }),
     guide: () => ({ open: guide.isOpen() }),
     guideOpen: () => guide.open(),
     guideClose: () => guide.close(),
     guideReload: () => guide.reload(),
+    labelPriority: () => labelPriority.map((index) => ({
+      name: cities[index].name,
+      weight: keyTierWeight(cities[index].name),
+    })),
     cityIndex: () =>
       cityIndex.map((city) => ({
         name: city.name,
@@ -888,12 +1029,22 @@ async function boot() {
     /** 城市光点在屏幕上的真实位置（与点击命中判定同源，自动化验收用）。 */
     cityScreen: (name) => {
       const wanted = String(name || '').replace(/市$/, '');
+      // ① 普通地级市：走省级/地级市光点图层
       const positions = cityLayer.screenPositions(camera, window.innerWidth, window.innerHeight);
       const hit = positions.find((position) => {
         const city = cityLayer.cities[position.index];
         return position.visible && city && String(city.name).replace(/市$/, '') === wanted;
       });
-      return hit ? { x: hit.x, y: hit.y, name: cityLayer.cities[hit.index].name } : null;
+      if (hit) return { x: hit.x, y: hit.y, name: cityLayer.cities[hit.index].name };
+      // ② 重点城市（有 3D 地标）：它们是 DOM 标签按钮
+      const label = Array.from(document.querySelectorAll('.city-label[data-slug]')).find((element) => {
+        const text = element.querySelector('.name')?.textContent || '';
+        return text.replace(/市$/, '') === wanted;
+      });
+      if (!label) return null;
+      const rect = label.getBoundingClientRect();
+      if (rect.width < 1) return null;
+      return { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2, name: label.textContent.trim(), label: true };
     },
     province: () => ({
       visible: provinceLayer.state.visible,

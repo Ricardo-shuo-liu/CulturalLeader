@@ -6,6 +6,7 @@
     <title>CulturalLeader · 文旅数字人讲台</title>
     <link rel="stylesheet" href="/css/stage.css" />
     <link rel="stylesheet" href="/css/map_ui.css" />
+    <link rel="stylesheet" href="/css/theme.css" />
     <script type="importmap">
       {
         "imports": {
@@ -149,6 +150,19 @@
           <div id="planner-detail" class="planner-detail"></div>
         </main>
       </div>
+      <div id="planner-chat" class="planner-chat glass">
+        <header class="pc-head">
+          <strong>问数字人</strong>
+          <span id="planner-chat-city" class="pc-city">还没选城市</span>
+          <button id="planner-chat-fold" type="button">收起</button>
+        </header>
+        <div id="planner-chat-log" class="pc-log"></div>
+        <div class="pc-row">
+          <input id="planner-chat-input" type="text" placeholder="问点什么，例如：这里怎么安排一天？" />
+          <button id="planner-chat-send" type="button">发送</button>
+        </div>
+        <button id="planner-chat-mic" class="mic-btn" type="button">按住说话</button>
+      </div>
       <div id="planner-toast" class="planner-toast"></div>
     </div>
 
@@ -159,6 +173,7 @@
         <span class="planner-spacer"></span>
         <select id="guide-select" title="切换攻略"></select>
         <button id="guide-new" type="button">新建</button>
+        <button id="guide-import" type="button">导入攻略（抄作业）</button>
         <button id="guide-save" type="button">重新计算</button>
         <button id="guide-export" type="button">导出 JSON</button>
         <button id="guide-share" type="button">分享链接</button>
@@ -180,6 +195,65 @@
         </main>
       </div>
       <div id="guide-toast" class="planner-toast"></div>
+    </div>
+
+    <div id="import-wizard" class="hidden">
+      <header class="planner-head">
+        <button id="import-close" type="button">← 返回</button>
+        <strong>导入攻略（抄作业）</strong>
+        <span id="import-steps" class="import-steps">
+          <span data-step="1">1 粘贴来源</span>
+          <span data-step="2">2 预览勾选</span>
+          <span data-step="3">3 地图确认</span>
+        </span>
+        <span class="planner-spacer"></span>
+        <span id="import-summary" class="muted"></span>
+      </header>
+
+      <section id="import-step1" class="import-step">
+        <div class="import-row">
+          <input id="import-url" type="url" placeholder="粘贴小红书 / 公众号 / 马蜂窝等攻略链接" />
+        </div>
+        <div class="import-row">
+          <textarea id="import-text" rows="9" placeholder="或者把攻略正文整段粘进来（链接抓不到时用这个）"></textarea>
+        </div>
+        <div class="import-row import-actions">
+          <div id="import-engine" class="seg">
+            <button type="button" data-engine="auto" class="active">自动</button>
+            <button type="button" data-engine="rule">规则解析</button>
+            <button type="button" data-engine="llm">大模型解析</button>
+          </div>
+          <label class="import-file-btn">上传截图<input id="import-file" type="file" accept="image/*" multiple hidden /></label>
+          <button id="import-parse" type="button" class="primary">开始解析</button>
+        </div>
+        <p class="planner-note">
+          小红书 / 抖音这类需要登录的站点服务端抓不到正文，会自动提示改用粘贴正文或上传截图；
+          截图解析需要配置 OPENAI_API_KEY。
+        </p>
+      </section>
+
+      <section id="import-step2" class="import-step hidden">
+        <div class="import-row">
+          <input id="import-title" class="planner-title" type="text" placeholder="攻略名称" />
+        </div>
+        <div id="import-review" class="import-review"></div>
+        <div class="import-row import-actions">
+          <button id="import-review-back" type="button">← 上一步</button>
+          <button id="import-review-next" type="button" class="primary">下一步：地图确认</button>
+        </div>
+      </section>
+
+      <section id="import-step3" class="import-step hidden">
+        <div class="import-confirm">
+          <div id="import-map" class="import-map"></div>
+          <aside id="import-pending" class="import-pending"></aside>
+        </div>
+        <div class="import-row import-actions">
+          <button id="import-confirm-back" type="button">← 上一步</button>
+          <button id="import-commit" type="button" class="primary">生成计划块与攻略</button>
+        </div>
+      </section>
+      <div id="import-toast" class="planner-toast"></div>
     </div>
 
     <button id="nav-toggle" class="nav-toggle" type="button">☰ 导航</button>

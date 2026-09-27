@@ -63,13 +63,13 @@ export class VoiceIO {
   }
 
   /** 提问：读取 SSE 流，回调 token / sentence / done。 */
-  async ask(citySlug, message, sessionId) {
+  async ask(citySlug, message, sessionId, cityName = '') {
     this.abortController?.abort();
     this.abortController = new AbortController();
     const response = await fetch('/api/chat', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ city_slug: citySlug, message, session_id: sessionId || null }),
+      body: JSON.stringify({ city_slug: citySlug, city_name: cityName || '', message, session_id: sessionId || null }),
       signal: this.abortController.signal,
     });
     if (!response.ok || !response.body) {

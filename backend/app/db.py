@@ -29,8 +29,12 @@ def get_db() -> Iterator[Session]:
 
 def init_db() -> None:
     from . import models  # noqa: F401  确保模型已注册
-    from .seed import seed_if_empty
+    from .seed import seed_if_empty, sync_capitals
 
     Base.metadata.create_all(engine)
     with SessionLocal() as db:
         seed_if_empty(db)
+        # 每次启动都补齐省会/首府/特别行政区（幂等，不覆盖已有内容）
+        added = sync_capitals(db)
+        if added:
+            print(f"[seed] 已补充 {added} 座省级城市的地标与讲解资料")

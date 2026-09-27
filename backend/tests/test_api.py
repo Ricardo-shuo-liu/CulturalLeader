@@ -55,46 +55,46 @@ def test_admin_crud_and_knowledge(client: TestClient):
         "/api/admin/cities",
         headers=TOKEN,
         json={
-            "slug": "hangzhou",
-            "name": "杭州",
-            "province": "浙江省",
+            "slug": "test-town",
+            "name": "测试城",
+            "province": "测试省",
             "lng": 120.1551,
             "lat": 30.2741,
-            "tags": ["西湖"],
+            "tags": ["测试"],
             "summary": "三面云山一面城",
-            "narration": "欢迎来到杭州。",
+            "narration": "欢迎来到测试城。",
         },
     )
     assert created.status_code == 200, created.text
-    assert created.json()["slug"] == "hangzhou"
+    assert created.json()["slug"] == "test-town"
 
     duplicated = client.post(
         "/api/admin/cities",
         headers=TOKEN,
-        json={"slug": "hangzhou", "name": "杭州", "lng": 120.1, "lat": 30.2},
+        json={"slug": "test-town", "name": "测试城", "lng": 120.1, "lat": 30.2},
     )
     assert duplicated.status_code == 409
 
     updated = client.put(
-        "/api/admin/cities/hangzhou",
+        "/api/admin/cities/test-town",
         headers=TOKEN,
-        json={"summary": "更新后的简介", "tags": ["西湖", "龙井"]},
+        json={"summary": "更新后的简介", "tags": ["测试", "更新"]},
     )
     assert updated.status_code == 200
     assert updated.json()["summary"] == "更新后的简介"
-    assert updated.json()["tags"] == ["西湖", "龙井"]
+    assert updated.json()["tags"] == ["测试", "更新"]
 
     knowledge = client.put(
-        "/api/admin/cities/hangzhou/knowledge",
+        "/api/admin/cities/test-town/knowledge",
         headers=TOKEN,
-        json=[{"question": "西湖怎么玩？", "answer": "沿湖骑行一圈约十五公里。"}],
+        json=[{"question": "测试城怎么玩？", "answer": "沿湖骑行一圈约十五公里。"}],
     )
     assert knowledge.status_code == 200
     assert len(knowledge.json()["knowledge"]) == 1
 
-    deleted = client.delete("/api/admin/cities/hangzhou", headers=TOKEN)
+    deleted = client.delete("/api/admin/cities/test-town", headers=TOKEN)
     assert deleted.status_code == 200
-    assert client.get("/api/cities/hangzhou").status_code == 404
+    assert client.get("/api/cities/test-town").status_code == 404
 
 
 def test_chat_stream_events_in_mock_mode(client: TestClient):

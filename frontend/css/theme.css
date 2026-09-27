@@ -1,0 +1,626 @@
+/* ─────────────────────────────────────────────────────────────
+   CulturalLeader 视觉改版（在 stage.css / map_ui.css 之后加载）
+   设计语言：宣纸 + 墨 + 赭金 —— 去掉霓虹发光与塑料感，
+   统一为「纸面卡片 + 发丝描边 + 印章红点缀」的东方质感。
+   ───────────────────────────────────────────────────────────── */
+
+:root {
+  --paper: #efe6d2;
+  --paper-dim: rgba(239, 230, 210, 0.62);
+  --paper-faint: rgba(239, 230, 210, 0.34);
+  --ink-deep: #0d1418;
+  --ink: #131c21;
+  --ink-soft: #1b262c;
+  --gold: #d8b46a;
+  --gold-soft: rgba(216, 180, 106, 0.5);
+  --seal: #b8443a;
+  --jade: #7fb8ae;
+  --hairline: rgba(239, 230, 210, 0.14);
+  --hairline-strong: rgba(239, 230, 210, 0.26);
+  --shadow-card: 0 18px 40px rgba(4, 8, 10, 0.42);
+  --radius-card: 4px;
+  --serif: "Songti SC", "Noto Serif SC", "Source Han Serif SC", "STSong", serif;
+}
+
+/* ── 纸面纹理：用极淡的噪点替代花哨渐变 ── */
+body::after {
+  content: '';
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 60;
+  opacity: 0.05;
+  mix-blend-mode: overlay;
+  background-image:
+    radial-gradient(rgba(255, 255, 255, 0.5) 0.5px, transparent 0.6px),
+    radial-gradient(rgba(0, 0, 0, 0.5) 0.5px, transparent 0.6px);
+  background-size: 3px 3px, 4px 4px;
+  background-position: 0 0, 1px 2px;
+}
+
+/* ── 城市标签：描点 + 引线 + 名牌（贴着地面，不再飘） ── */
+.city-label {
+  position: absolute;
+  left: 0;
+  top: 0;
+  transform: translate3d(-9999px, -9999px, 0);
+  /* 只做淡入淡出，位置一律整数对齐：既不会「飘」，也不会突然闪没 */
+  opacity: 0;
+  transition: opacity 0.22s ease;
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0;
+  padding: 0;
+  margin: 0;
+  border: none;
+  background: none;
+  color: var(--paper);
+  font-family: var(--serif);
+  cursor: pointer;
+  pointer-events: auto;
+  z-index: 2;
+  transition: none;
+  will-change: transform;
+}
+
+/* 全国视野字号小一档，让 34 个省会尽量都放得下；缩进到省级再放大 */
+#labels[data-scale='far'] .city-label .name {
+  padding: 2px 7px 3px;
+  font-size: 11px;
+  letter-spacing: 1.5px;
+}
+
+#labels[data-scale='near'] .city-label .name {
+  padding: 3px 11px 4px;
+  font-size: 13.5px;
+  letter-spacing: 2.5px;
+}
+
+.city-label .name {
+  padding: 3px 11px 4px;
+  border: 1px solid var(--hairline-strong);
+  border-radius: 2px;
+  background: linear-gradient(180deg, rgba(14, 21, 25, 0.86), rgba(11, 17, 21, 0.72));
+  box-shadow: 0 3px 10px rgba(0, 0, 0, 0.35);
+  font-size: 13.5px;
+  letter-spacing: 2.5px;
+  white-space: nowrap;
+  backdrop-filter: none;
+}
+
+.city-label::after {
+  content: '';
+  width: 1px;
+  height: 9px;
+  background: linear-gradient(to bottom, var(--gold-soft), rgba(216, 180, 106, 0.05));
+}
+
+.city-label .dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--gold);
+  box-shadow: 0 0 0 2px rgba(13, 20, 24, 0.85), 0 0 10px rgba(216, 180, 106, 0.55);
+}
+
+.city-label:hover .name,
+.city-label:focus-visible .name {
+  border-color: var(--gold-soft);
+  background: linear-gradient(180deg, rgba(22, 32, 38, 0.94), rgba(13, 20, 24, 0.86));
+}
+
+.city-label.active .name {
+  border-color: var(--seal);
+  color: #f7e9c9;
+}
+
+/* 普通地级市标签：更小、更淡，同样贴地 */
+.city-label-minor {
+  position: absolute;
+  left: 0;
+  top: 0;
+  opacity: 0;
+  transition: opacity 0.22s ease;
+  padding: 2px 8px 3px;
+  margin: 0;
+  border: 1px solid rgba(239, 230, 210, 0.1);
+  border-radius: 2px;
+  background: rgba(10, 16, 20, 0.55);
+  color: var(--paper-dim);
+  font-family: var(--serif);
+  font-size: 12px;
+  letter-spacing: 1.5px;
+  pointer-events: none;
+  z-index: 1;
+  transition: none;
+  will-change: transform;
+}
+
+/* ── 导航按钮：做成「印章」 ── */
+.nav-toggle {
+  left: 26px;
+  top: 26px;
+  padding: 8px 14px 9px;
+  border-radius: 2px;
+  border: 1px solid rgba(184, 68, 58, 0.75);
+  background: rgba(184, 68, 58, 0.16);
+  color: #f0dfc4;
+  font-family: var(--serif);
+  font-size: 14px;
+  letter-spacing: 4px;
+  box-shadow: none;
+}
+
+.nav-toggle:hover {
+  background: rgba(184, 68, 58, 0.28);
+  border-color: var(--seal);
+}
+
+/* ── 抽屉：宣纸卷轴 ── */
+#drawer {
+  width: 336px;
+  border-radius: 0 6px 6px 0;
+  border: 1px solid var(--hairline);
+  border-left: none;
+  background: linear-gradient(180deg, rgba(15, 22, 26, 0.97), rgba(11, 17, 21, 0.97));
+  box-shadow: var(--shadow-card);
+}
+
+#drawer .drawer-head strong {
+  letter-spacing: 8px;
+  font-weight: normal;
+}
+
+#drawer .drawer-head button {
+  color: var(--paper-dim);
+}
+
+.drawer-section {
+  border-top: 1px solid var(--hairline);
+}
+
+.drawer-section h4 {
+  letter-spacing: 5px;
+  color: var(--gold);
+  font-weight: normal;
+}
+
+#drawer select,
+#drawer input[type="search"],
+#drawer .drawer-btn {
+  border-radius: 2px;
+  border: 1px solid var(--hairline);
+  background: rgba(9, 15, 19, 0.7);
+  font-family: var(--serif);
+  letter-spacing: 1px;
+}
+
+#drawer .drawer-btn:hover {
+  border-color: var(--hairline-strong);
+  background: rgba(20, 29, 34, 0.8);
+}
+
+#drawer .drawer-btn.primary {
+  border-color: rgba(184, 68, 58, 0.7);
+  background: rgba(184, 68, 58, 0.16);
+  color: #f2dcc0;
+}
+
+/* ── 城市卡片 / 面板 ── */
+#city-card {
+  border-radius: var(--radius-card);
+  border: 1px solid var(--hairline);
+  background: linear-gradient(180deg, rgba(15, 22, 26, 0.95), rgba(11, 17, 21, 0.92));
+  box-shadow: var(--shadow-card);
+}
+
+#city-card header strong {
+  letter-spacing: 4px;
+  font-weight: normal;
+}
+
+#city-card .primary,
+#city-card button.primary {
+  border-color: rgba(184, 68, 58, 0.75);
+  background: rgba(184, 68, 58, 0.18);
+  color: #f2dcc0;
+  border-radius: 2px;
+}
+
+#panel {
+  border-radius: 0 6px 6px 0;
+  border: 1px solid var(--hairline);
+  border-left: none;
+  background: linear-gradient(180deg, rgba(15, 22, 26, 0.96), rgba(11, 17, 21, 0.94));
+  box-shadow: var(--shadow-card);
+}
+
+#panel h1 {
+  letter-spacing: 6px;
+  font-weight: normal;
+}
+
+#panel .label,
+#panel .panel-narration .label {
+  letter-spacing: 3px;
+  color: var(--gold);
+}
+
+#panel .ghost-btn,
+#panel button {
+  border-radius: 2px;
+  border: 1px solid var(--hairline);
+  background: rgba(9, 15, 19, 0.6);
+}
+
+/* ── 时间牌：仪表感改成「日晷铭牌」 ── */
+#timeboard {
+  border-radius: 3px;
+  border: 1px solid var(--hairline);
+  background: rgba(11, 17, 21, 0.72);
+  box-shadow: none;
+}
+
+#timeboard .tb-icon {
+  color: var(--gold);
+}
+
+/* ── 说话气泡：像宣纸题签 ── */
+#speech-bubble {
+  border-radius: 3px;
+  border: 1px solid var(--hairline-strong);
+  border-left: 2px solid var(--seal);
+  background: linear-gradient(180deg, rgba(19, 27, 32, 0.94), rgba(13, 20, 24, 0.9));
+  box-shadow: var(--shadow-card);
+  font-family: var(--serif);
+  line-height: 1.9;
+}
+
+/* ── 规划面板 / 攻略面板 ── */
+.planner-head {
+  border-bottom: 1px solid var(--hairline);
+  background: rgba(10, 16, 20, 0.9);
+  padding: 14px 20px;
+}
+
+.planner-head strong,
+.planner-title {
+  letter-spacing: 3px;
+  font-weight: normal;
+}
+
+.planner-title {
+  border-radius: 2px;
+  border: 1px solid var(--hairline);
+  background: rgba(9, 15, 19, 0.6);
+}
+
+.planner-head button,
+.planner-side button,
+.planner-searchbar button,
+.planner-poi-item button,
+.planner-detail button,
+.guide-library-item button {
+  border-radius: 2px;
+  border: 1px solid var(--hairline);
+  background: rgba(9, 15, 19, 0.62);
+  letter-spacing: 1px;
+  transition: border-color 0.18s ease, background 0.18s ease, color 0.18s ease;
+}
+
+.planner-head button:hover,
+.planner-side button:hover,
+.planner-poi-item button:hover {
+  border-color: var(--hairline-strong);
+  background: rgba(24, 34, 40, 0.85);
+}
+
+.planner-side button.primary,
+.planner-row button.primary,
+#planner-optimize,
+#planner-pick-start {
+  border-color: rgba(184, 68, 58, 0.72);
+  background: rgba(184, 68, 58, 0.18);
+  color: #f4dfc4;
+}
+
+.planner-hint {
+  border-bottom: 1px solid var(--hairline);
+  color: var(--paper-dim);
+}
+
+.planner-main,
+.guide-main {
+  background: linear-gradient(180deg, rgba(9, 14, 18, 0.96), rgba(7, 11, 14, 0.98));
+}
+
+.planner-side {
+  border-right: 1px solid var(--hairline);
+  background: rgba(10, 16, 20, 0.72);
+}
+
+.planner-row input[type="text"],
+.planner-row input[type="search"],
+.planner-row input[type="time"],
+.planner-row input[type="number"],
+.planner-searchbar input,
+.planner-detail input,
+.guide-notes,
+.guide-replace {
+  border-radius: 2px;
+  border: 1px solid var(--hairline);
+  background: rgba(9, 15, 19, 0.66);
+  font-family: var(--serif);
+}
+
+.planner-stops .planner-stop,
+.guide-item,
+.guide-library-item {
+  border-radius: 3px;
+  border: 1px solid var(--hairline);
+  background: rgba(12, 19, 23, 0.6);
+}
+
+.planner-stops .planner-stop.active {
+  border-color: var(--gold-soft);
+  background: rgba(216, 180, 106, 0.1);
+}
+
+.planner-stop-index {
+  border-radius: 2px;
+  background: rgba(216, 180, 106, 0.16);
+  color: var(--gold);
+  font-family: var(--serif);
+}
+
+.planner-plan {
+  border-left: 2px solid var(--gold-soft);
+  padding-left: 12px;
+  color: var(--paper-dim);
+  line-height: 1.95;
+}
+
+.planner-searchbar,
+.planner-buckets,
+.planner-poi,
+.planner-detail,
+.planner-chat,
+.map-picker {
+  border-radius: 3px;
+  border: 1px solid var(--hairline);
+  background: linear-gradient(180deg, rgba(14, 21, 25, 0.94), rgba(11, 17, 21, 0.9));
+  box-shadow: var(--shadow-card);
+}
+
+.planner-buckets button {
+  border-radius: 2px;
+  border: 1px solid var(--hairline);
+  background: rgba(9, 15, 19, 0.6);
+  letter-spacing: 1px;
+}
+
+.planner-buckets button.active {
+  border-color: var(--gold-soft);
+  background: rgba(216, 180, 106, 0.14);
+  color: var(--gold);
+}
+
+.planner-poi-title {
+  color: var(--gold);
+  letter-spacing: 2px;
+}
+
+.planner-marker {
+  border-radius: 2px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.5);
+  font-family: var(--serif);
+}
+
+.planner-marker-label {
+  padding: 1px 6px;
+  border-radius: 2px;
+  background: rgba(10, 16, 20, 0.7);
+  font-family: var(--serif);
+  letter-spacing: 1px;
+}
+
+.map-leg {
+  border-radius: 2px;
+  border: 1px solid var(--hairline);
+  background: rgba(10, 16, 20, 0.85);
+  color: var(--paper-dim);
+  font-family: var(--serif);
+}
+
+.map-scalebar-text,
+.map-attribution {
+  color: var(--paper-dim);
+  font-family: var(--serif);
+}
+
+.map-compass {
+  border-radius: 2px;
+  border: 1px solid var(--hairline-strong);
+  background: rgba(10, 16, 20, 0.8);
+  color: var(--gold);
+}
+
+/* ── 对话面板 ── */
+.planner-chat .pc-head strong {
+  letter-spacing: 4px;
+  font-weight: normal;
+}
+
+.pc-msg {
+  border-radius: 3px;
+}
+
+.pc-msg.user {
+  background: rgba(184, 68, 58, 0.18);
+  color: #f4dfc4;
+}
+
+.pc-msg.assistant {
+  border: 1px solid var(--hairline);
+  background: rgba(12, 19, 23, 0.75);
+}
+
+.pc-row button {
+  border-radius: 2px;
+  border-color: rgba(184, 68, 58, 0.7);
+  background: rgba(184, 68, 58, 0.16);
+  color: #f4dfc4;
+}
+
+/* ── 提示条与消息 ── */
+.planner-toast,
+#toast {
+  border-radius: 2px;
+  border: 1px solid var(--hairline-strong);
+  background: rgba(10, 16, 20, 0.94);
+  font-family: var(--serif);
+  letter-spacing: 1px;
+}
+
+/* ── 抄作业导入向导 ── */
+#import-wizard {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  display: flex;
+  flex-direction: column;
+  background: linear-gradient(180deg, rgba(9, 14, 18, 0.98), rgba(7, 11, 14, 0.99));
+  color: var(--paper);
+  font-family: var(--serif);
+}
+
+#import-wizard.hidden { display: none !important; }
+
+#import-wizard .import-step {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 16px 22px 20px;
+  overflow: auto;
+}
+
+.import-steps { display: flex; gap: 12px; font-size: 12px; color: var(--paper-faint); }
+.import-steps span.active { color: var(--gold); }
+
+.import-row { display: flex; gap: 10px; align-items: center; }
+
+#import-url,
+#import-text,
+.import-city,
+.ip-name,
+.ip-time,
+.ip-dwell {
+  padding: 8px 10px;
+  border: 1px solid var(--hairline);
+  border-radius: 2px;
+  background: rgba(9, 15, 19, 0.72);
+  color: var(--paper);
+  font-family: var(--serif);
+  font-size: 13px;
+}
+
+#import-url { flex: 1; }
+#import-text { width: 100%; line-height: 1.9; resize: vertical; }
+
+.import-file-btn {
+  padding: 8px 12px;
+  border: 1px solid var(--hairline);
+  border-radius: 2px;
+  background: rgba(9, 15, 19, 0.6);
+  cursor: pointer;
+  font-size: 13px;
+}
+
+.import-file-btn:hover { border-color: var(--hairline-strong); }
+
+.import-review { flex: 1; min-height: 0; overflow: auto; display: flex; flex-direction: column; gap: 10px; }
+
+.import-day {
+  padding: 10px 12px;
+  border: 1px solid var(--hairline);
+  border-radius: 3px;
+  background: rgba(12, 19, 23, 0.6);
+}
+
+.import-day header { display: flex; gap: 10px; align-items: center; margin-bottom: 8px; }
+.import-day header strong { letter-spacing: 3px; font-weight: normal; color: var(--gold); }
+.import-count { font-size: 12px; color: var(--paper-faint); }
+
+.import-places { display: flex; flex-direction: column; gap: 6px; }
+
+.import-place {
+  display: grid;
+  grid-template-columns: 24px 1fr 108px 82px 68px;
+  gap: 8px;
+  align-items: center;
+  font-size: 13px;
+}
+
+.ip-status { font-size: 12px; }
+.ip-status.ok { color: var(--jade); }
+.ip-status.pending { color: #e0a05a; }
+
+.import-confirm { flex: 1; min-height: 320px; display: grid; grid-template-columns: 1fr 300px; gap: 12px; }
+
+.import-map {
+  position: relative;
+  min-height: 320px;
+  border: 1px solid var(--hairline);
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.import-pending {
+  padding: 10px 12px;
+  border: 1px solid var(--hairline);
+  border-radius: 3px;
+  background: rgba(12, 19, 23, 0.6);
+  overflow: auto;
+  font-size: 13px;
+}
+
+.import-pending-head { color: var(--paper-dim); margin-bottom: 8px; }
+
+.import-pending-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 0;
+  border-bottom: 1px dashed var(--hairline);
+}
+
+.import-pending-item button {
+  padding: 4px 10px;
+  border: 1px solid rgba(184, 68, 58, 0.6);
+  border-radius: 2px;
+  background: rgba(184, 68, 58, 0.16);
+  color: #f4dfc4;
+  font-family: var(--serif);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.stop-pending {
+  margin-left: 6px;
+  padding: 0 5px;
+  font-size: 11px;
+  border: 1px solid rgba(224, 160, 90, 0.5);
+  border-radius: 2px;
+  color: #e0a05a;
+}
+
+.planner-stop.pending { border-left: 3px solid rgba(224, 160, 90, 0.8); }
+
+/* ── 数字人光晕收一点，避免「AI 味」的霓虹边 ── */
+#live2d-stage {
+  filter: drop-shadow(0 12px 26px rgba(0, 0, 0, 0.5));
+}

@@ -15,7 +15,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
 from backend.app.config import get_settings  # noqa: E402
-from backend.app.services.tencent_map import MapError, TencentMapClient  # noqa: E402
+from backend.app.services.tencent_map import STATUS_HINTS, MapError, TencentMapClient  # noqa: E402
 
 def _public_ip() -> str:
     """查询本机出口 IP（供加入腾讯 Key 的白名单）。"""
@@ -31,38 +31,64 @@ def _public_ip() -> str:
     return "（查询失败，可在浏览器搜索「我的IP」查看）"
 
 
-def _check_static_map(client) -> str:
-    """静态图（WebServiceAPI 的 staticmap）：这一项通过就说明城内能显示腾讯真实底图。"""
+def _live_call(client, path: str, params: dict) -> dict:
+    """绕过缓存直接打腾讯接口：这样才能真实反映「现在的 Key + 现在的出口 IP」是否可用。"""
+    import json as _json
     import urllib.parse
     import urllib.request
 
-    from backend.app.config import get_settings
-
-    settings = get_settings()
-    params = {"center": "34.62,112.454", "zoom": 12, "size": "400*300", "maptype": "roadmap", "key": settings.tencent_map_key}
-    signature = client._signature("ws/staticmap/v2/", params)
+    query = dict(params)
+    query["key"] = client.settings.tencent_map_key
+    signature = client._signature(path, query)
     if signature:
-        params["sig"] = signature
-    url = "https://apis.map.qq.com/ws/staticmap/v2/?" + urllib.parse.urlencode(params)
+        query["sig"] = signature
+    url = f"https://apis.map.qq.com/{path}?" + urllib.parse.urlencode(query)
     try:
-        with urllib.request.urlopen(urllib.request.Request(url, headers={"User-Agent": "CulturalLeader/0.1"}), timeout=15) as response:  # noqa: S310
-            data = response.read()
+        with urllib.request.urlopen(  # noqa: S310
+            urllib.request.Request(url, headers={"User-Agent": "CulturalLeader/0.1"}), timeout=15
+        ) as response:
+            payload = _json.loads(response.read().decode("utf-8"))
     except Exception as error:  # noqa: BLE001
-        return f"请求失败：{error}"
-    if data[:4] == b"\x89PNG":
-        return f"ok（{len(data) / 1024:.0f} KB PNG）"
-    text = data.decode("utf-8", errors="ignore")[:160]
-    raise MapError(text)
+        raise MapError(f"请求失败：{error}") from error
+    status = int(payload.get("status") or 0)
+    if status != 0:
+        raise MapError(
+            f"{payload.get('message') or '请求失败'}（status={status}）→ "
+            f"{STATUS_HINTS.get(status, '检查 Key 与授权设置')}"
+        )
+    return payload
+
+
+def _check_district(client) -> str:
+    payload = _live_call(client, "ws/district/v1/list", {})
+    return f"ok（{len(payload.get('result') or [])} 项）"
+
+
+def _check_poi(client) -> str:
+    payload = _live_call(
+        client, "ws/place/v1/search", {"keyword": "咖啡", "boundary": "region(北京市,0)", "page_size": 1}
+    )
+    return f"ok（{len(payload.get('data') or [])} 条）"
+
+
+def _check_route(client) -> str:
+    _live_call(client, "ws/direction/v1/walking", {"from": "39.908,116.397", "to": "39.916,116.407"})
+    return "ok"
+
+
+def _check_reverse(client) -> str:
+    payload = _live_call(
+        client, "ws/geocoder/v1", {"location": "34.555,112.477", "get_poi": 1, "poi_options": "radius=200;page_size=1"}
+    )
+    nearest = ((payload.get("result") or {}).get("pois") or [{}])[0].get("title") or "（无最近地点）"
+    return f"ok（最近：{nearest}）"
 
 
 CHECKS = [
-    ("静态图（真实底图）", lambda client: _check_static_map(client)),
-    ("行政区划（district/list）", lambda client: client.district_list()),
-    ("POI 搜索（place/search）", lambda client: client.poi_search("咖啡", city="北京市", offset=1)),
-    (
-        "路径规划（direction/walking）",
-        lambda client: client.route("walking", {"lng": 116.397, "lat": 39.908}, {"lng": 116.407, "lat": 39.916}),
-    ),
+    ("行政区划（district/list）", lambda client: _check_district(client)),
+    ("POI 搜索（place/search）", lambda client: _check_poi(client)),
+    ("路径规划（direction/walking）", lambda client: _check_route(client)),
+    ("地图取点（geocoder 逆地理）", lambda client: _check_reverse(client)),
 ]
 
 
@@ -114,8 +140,8 @@ def main() -> int:
                 failures += 1
 
     print(
-        "[INFO] 城内真实底图来自「静态图」接口（WebServiceAPI，只需上面的 Key）；"
-        "JS Key 是可选项，只用于把静态底图换成可自由拖拽的矢量地图"
+        "[INFO] 城内地图默认加载腾讯 GL 矢量底图（JS Key，可连续拖拽/缩放）；"
+        "没有 JS Key 时自动降级为自建矢量底图，功能完整"
     )
     if settings.tencent_map_js_key:
         print("[PASS] 另已配置 JS Key（矢量地图模式）")

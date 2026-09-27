@@ -24,6 +24,11 @@ const LABEL_TIERS = {
   mid: { limit: 140, cellX: 74, cellY: 24 },
   near: { limit: 240, cellX: 56, cellY: 22 },
 };
+// 标签宽度估算：小字号中文 ≈13px/字，再加左右内边距
+const labelWidthOf = (city) => {
+  const text = String(city?.name || '').replace(/市$/, '');
+  return Math.max(38, text.length * 13 + 20);
+};
 const PROJECT_INTERVAL_MS = 100; // 屏幕投影节流
 const LABEL_INTERVAL_MS = 120; // 标签 DOM 更新节流
 
@@ -271,12 +276,12 @@ export function createCityLayer({ scene, terrainHeight, exclude = new Set() }) {
       }
       return projected;
     },
-    /** 更新 HTML 标签（节流 + 只在变化时写 DOM）。 */
-    updateLabels(screenPositions, width, height) {
+    /** 更新 HTML 标签（节流 + 只在变化时写 DOM）；mask 是重点城市标签已占用的格子。 */
+    updateLabels(screenPositions, width, height, mask = null, hideAll = false) {
       const now = performance.now();
       if (now - lastLabelAt < LABEL_INTERVAL_MS) return;
       lastLabelAt = now;
-      if (!state.showLabels) {
+      if (!state.showLabels || hideAll) {
         if (state.labelCount !== 0) {
           labels.forEach((element) => {
             element.style.display = 'none';
@@ -289,6 +294,7 @@ export function createCityLayer({ scene, terrainHeight, exclude = new Set() }) {
       const tier = LABEL_TIERS[state.level] || LABEL_TIERS.mid;
       let used = 0;
       const occupied = new Set();
+      const chosenY = new Float32Array(count);
       for (let i = 0; i < count && orderScratch.length; i += 1) orderScratch[i] = i;
       orderScratch.length = count;
       orderScratch.sort((a, b) => scales[b] - scales[a]);
@@ -297,9 +303,23 @@ export function createCityLayer({ scene, terrainHeight, exclude = new Set() }) {
         const index = orderScratch[i];
         const position = screenPositions[index];
         if (!position || !position.visible || !labelAllowed[index]) continue;
-        const cell = `${Math.round(position.x / tier.cellX)}:${Math.round(position.y / tier.cellY)}`;
-        if (occupied.has(cell)) continue;
-        occupied.add(cell);
+        // 标签同样是以锚点为中心、向上延伸的小牌子；和重点城市一样给几个候选位置
+        const labelWidth = labelWidthOf(cities[index]);
+        const cellsAt = (cx, cy) => {
+          const list = [];
+          for (let col = Math.floor((cx - labelWidth / 2) / 34); col <= Math.floor((cx + labelWidth / 2) / 34); col += 1) {
+            for (let row = Math.floor((cy - 24) / 20); row <= Math.floor((cy + 5) / 20); row += 1) {
+              list.push(`${col}:${row}`);
+            }
+          }
+          return list;
+        };
+        // 只保留「正上方」一个位置：不做多方位挪动，避免视觉上像在找位置
+        const cells = cellsAt(position.x, position.y);
+        if (cells.some((cell) => occupied.has(cell) || (mask && mask.has(cell)))) continue;
+        const chosenYValue = position.y;
+        cells.forEach((key) => occupied.add(key));
+        chosenY[index] = chosenYValue;
         orderScratch[used] = index; // 复用数组前半段记录入选顺序
         used += 1;
       }
@@ -317,7 +337,8 @@ export function createCityLayer({ scene, terrainHeight, exclude = new Set() }) {
         const name = cities[index].name.replace(/市$/, '');
         if (element.textContent !== name) element.textContent = name;
         element.style.display = '';
-        element.style.transform = `translate(${position.x}px, ${position.y}px)`;
+        // 取整避免亚像素抖动；锚点在标签底部中心，视觉上贴着城市光点
+        element.style.transform = `translate3d(${Math.round(position.x)}px, ${Math.round(chosenY[index])}px, 0) translate(-50%, -100%) translateY(3px)`;
       }
       for (let i = used; i < labels.length; i += 1) {
         if (labels[i].style.display !== 'none') labels[i].style.display = 'none';

@@ -91,8 +91,11 @@ def normalize_point(point: dict) -> dict:
         "dwell_minutes": int(point.get("dwell_minutes") or DEFAULT_DWELL),
         "fixed_time": point.get("fixed_time") or None,
         "locked": bool(point.get("locked")),
+        "status": "pending" if point.get("status") == "pending" else "confirmed",
+        "note": str(point.get("note") or ""),
     }
-    if result["lng"] is None or result["lat"] is None:
+    # 待定位的点位（导入攻略时 POI 没匹配上）允许没有坐标，等用户在地图上点一下落位
+    if (result["lng"] is None or result["lat"] is None) and result["status"] != "pending":
         raise ValueError(f"点位缺少坐标：{result['name']}")
     return result
 
@@ -220,6 +223,8 @@ def summarize(flow: dict) -> dict:
         "adcode": flow.get("city", {}).get("adcode") or "",
         "transport": flow.get("transport"),
         "points": len(flow.get("points") or []),
+        "pending": sum(1 for point in (flow.get("points") or []) if point.get("status") == "pending"),
+        "source": flow.get("source") or None,
         "total_minutes": plan.get("total_minutes"),
         "distance_km": round(sum(float(leg.get("distance_km") or 0) for leg in plan.get("legs") or []), 2),
         "end_time": plan.get("end_time"),

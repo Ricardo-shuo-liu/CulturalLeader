@@ -1,9 +1,11 @@
 // 程序化地标：用基础几何体 + 程序化贴图拼出可辨认且细节丰富的城市地标。
 
 import * as THREE from 'three';
+import { CN_LANDMARK_BUILDERS } from './landmarks_cn.js';
+import { LANDMARKS_CN } from './data/landmarks-cn.js';
 import { PALETTE } from './config.js';
 
-function material(color, options = {}) {
+export function material(color, options = {}) {
   return new THREE.MeshStandardMaterial({
     color: new THREE.Color(color),
     roughness: options.roughness ?? 0.62,
@@ -16,7 +18,9 @@ function material(color, options = {}) {
 }
 
 /** 程序化贴图工具：瓦垄、砖纹、窗棂、彩画额枋、幕墙网格。 */
-function canvasTexture(width, height, draw, repeat = [1, 1]) {
+export function canvasTexture(width, height, draw, repeat = [1, 1]) {
+  // Node 校验环境没有 DOM：直接返回 null（three 支持 map 为空），浏览器里照常生成贴图
+  if (typeof document === 'undefined') return null;
   const canvas = document.createElement('canvas');
   canvas.width = width;
   canvas.height = height;
@@ -29,7 +33,7 @@ function canvasTexture(width, height, draw, repeat = [1, 1]) {
   return texture;
 }
 
-function tileTexture(base = '#2f5c9c', dark = '#1d3c69') {
+export function tileTexture(base = '#2f5c9c', dark = '#1d3c69') {
   return canvasTexture(
     128,
     128,
@@ -57,7 +61,7 @@ function tileTexture(base = '#2f5c9c', dark = '#1d3c69') {
   );
 }
 
-function brickTexture(base = '#8a6a52', line = '#6d5140') {
+export function brickTexture(base = '#8a6a52', line = '#6d5140') {
   return canvasTexture(
     128,
     128,
@@ -84,7 +88,7 @@ function brickTexture(base = '#8a6a52', line = '#6d5140') {
   );
 }
 
-function latticeTexture(base = '#8f2f26', line = '#f0dfae') {
+export function latticeTexture(base = '#8f2f26', line = '#f0dfae') {
   return canvasTexture(
     128,
     128,
@@ -141,7 +145,7 @@ function beamTexture() {
   );
 }
 
-function curtainWallTexture(base = '#b9c6cf', line = '#7d8b96') {
+export function curtainWallTexture(base = '#b9c6cf', line = '#7d8b96') {
   return canvasTexture(
     128,
     128,
@@ -173,7 +177,7 @@ function curtainWallTexture(base = '#b9c6cf', line = '#7d8b96') {
   );
 }
 
-function pillarRing(group, count, radius, height, mat, y = 0, thickness = 0.012) {
+export function pillarRing(group, count, radius, height, mat, y = 0, thickness = 0.012) {
   const geometry = new THREE.CylinderGeometry(thickness, thickness, height, 10);
   for (let i = 0; i < count; i += 1) {
     const angle = (i / count) * Math.PI * 2;
@@ -183,7 +187,7 @@ function pillarRing(group, count, radius, height, mat, y = 0, thickness = 0.012)
   }
 }
 
-function railingRing(group, count, radius, y, mat) {
+export function railingRing(group, count, radius, y, mat) {
   const post = new THREE.CylinderGeometry(0.006, 0.006, 0.035, 8);
   for (let i = 0; i < count; i += 1) {
     const angle = (i / count) * Math.PI * 2;
@@ -584,11 +588,15 @@ const BUILDERS = {
   bell_tower: bellTower,
   panda_tower: pandaTower,
   generic,
+  ...CN_LANDMARK_BUILDERS,
 };
 
+export { THREE };
+
 export function landmarkFactory(key) {
-  const builder = BUILDERS[key] || generic;
-  const group = builder();
+  const config = LANDMARKS_CN[key] || null;
+  const builder = BUILDERS[key] || (config ? BUILDERS[config.archetype] : null) || generic;
+  const group = builder(config || {});
   group.rotation.y = Math.PI * 0.08;
   return group;
 }
@@ -603,9 +611,14 @@ export function createLandmarkScene() {
   const fillLight = new THREE.HemisphereLight(PALETTE.skyDay, '#0B1A1F', 0.6);
   root.add(fillLight);
 
-  const rimLight = new THREE.DirectionalLight(PALETTE.gold, 0.6);
+  const rimLight = new THREE.DirectionalLight(PALETTE.gold, 0.78);
   rimLight.position.set(3.0, 1.4, -2.5);
   root.add(rimLight);
+
+  // 檐下补光：把斗拱、檐铃、瓦当这些细节照亮一点，不然近看是一片黑
+  const bounceLight = new THREE.DirectionalLight('#f0dcb4', 0.22);
+  bounceLight.position.set(-1.6, 0.6, 2.4);
+  root.add(bounceLight);
 
   const stageLight = new THREE.PointLight(PALETTE.paper, 0.0, 6, 2);
   stageLight.position.set(0, 1.8, 1.0);

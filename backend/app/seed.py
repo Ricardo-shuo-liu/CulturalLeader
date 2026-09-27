@@ -5,6 +5,7 @@ import json
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from .data.capitals import CAPITALS
 from .models import City, Knowledge
 
 SEED_CITIES: list[dict] = [
@@ -124,6 +125,37 @@ SEED_CITIES: list[dict] = [
         ],
     },
 ]
+
+
+def sync_capitals(db: Session) -> int:
+    """补齐省会 / 自治区首府 / 直辖市 / 特别行政区的城市资料（幂等）。
+
+    只补数据库里还没有的城市，已存在的内容（例如北京、上海这些更详细的讲解）不会被覆盖。
+    返回新增数量。
+    """
+    added = 0
+    for index, item in enumerate(CAPITALS):
+        if db.scalar(select(City).where(City.slug == item["slug"])) is not None:
+            continue
+        city = City(
+            slug=item["slug"],
+            name=item["name"],
+            province=item["province"],
+            lng=item["lng"],
+            lat=item["lat"],
+            accent_color=item["accent_color"],
+            summary=item["summary"],
+            tags=json.dumps(item["tags"], ensure_ascii=False),
+            landmark_key=item["landmark_key"],
+            narration=item["narration"],
+            sort_order=100 + index * 10,
+        )
+        city.knowledge = [Knowledge(question=q, answer=a) for q, a in item["knowledge"]]
+        db.add(city)
+        added += 1
+    if added:
+        db.commit()
+    return added
 
 
 def seed_if_empty(db: Session) -> None:

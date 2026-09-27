@@ -16,6 +16,8 @@ const { RANGES } = await import(path.join(root, 'frontend/js/data/ranges.js'));
 const tripUtils = await import(path.join(root, 'frontend/js/map/trip_utils.js'));
 const { CITIES_CN } = await import(path.join(root, 'frontend/js/data/cities-cn.js'));
 const mercator = await import(path.join(root, 'frontend/js/map/mercator.js'));
+const landmarks = await import(path.join(root, 'frontend/js/landmarks.js'));
+const { LANDMARKS_CN } = await import(path.join(root, 'frontend/js/data/landmarks-cn.js'));
 const cityIndexUtils = await import(path.join(root, 'frontend/js/map/city_index.js'));
 
 const results = [];
@@ -298,6 +300,79 @@ check('统一城市索引：重点城市带 3D 地标、地级市齐全', () => 
   assert.ok(luoyang && !luoyang.landmark_key && luoyang.adcode, '普通地级市应无地标但有 adcode');
   assert.ok(cityIndexUtils.cityCardMeta(luoyang).includes('双击进入流程编辑'));
   return `${index.length} 座城市（含 ${index.filter((city) => city.landmark_key).length} 座 3D 地标）`;
+});
+
+check('省会 / 自治区首府 / 特别行政区地标全部可构建', () => {
+  const keys = Object.keys(LANDMARKS_CN);
+  const built = keys.map((key) => {
+    const group = landmarks.landmarkFactory(key);
+    let meshes = 0;
+    group.traverse((node) => {
+      if (node.isMesh) meshes += 1;
+    });
+    return [key, meshes];
+  });
+  const bad = built.filter(([, meshes]) => meshes <= 3);
+  assert.ok(keys.length >= 33, `地标数量不足：${keys.length}`);
+  assert.equal(bad.length, 0, `以下地标退化成兜底模型：${bad.map(([key]) => key).join('、')}`);
+  const lightest = built.reduce((min, item) => (item[1] < min[1] ? item : min), built[0]);
+  return `${keys.length} 个地标，最少网格 ${lightest[1]}（${lightest[0]}）`;
+});
+
+check('同一原型的城市也要能分辨（形体 + 专属部件）', () => {
+  const groups = new Map();
+  Object.entries(LANDMARKS_CN).forEach(([key, config]) => {
+    const group = landmarks.landmarkFactory(key);
+    const box = new landmarks.THREE.Box3().setFromObject(group);
+    const size = box.getSize(new landmarks.THREE.Vector3());
+    let meshes = 0;
+    group.traverse((node) => {
+      if (node.isMesh) meshes += 1;
+    });
+    const signature = [
+      meshes,
+      Math.round(size.y * 100),
+      Math.round((size.x + size.z) * 100),
+      (config.props || []).join('+'),
+      config.shape || '',
+      config.tiers || 0,
+      config.levels || 0,
+    ].join('|');
+    const list = groups.get(config.archetype) || [];
+    list.push({ key, city: config.city, signature });
+    groups.set(config.archetype, list);
+  });
+  const clashes = [];
+  groups.forEach((list, archetype) => {
+    if (list.length < 2) return;
+    const seen = new Map();
+    list.forEach((item) => {
+      if (seen.has(item.signature)) {
+        clashes.push(`${archetype}: ${seen.get(item.signature)} 与 ${item.city} 完全一样`);
+      } else {
+        seen.set(item.signature, item.city);
+      }
+    });
+  });
+  assert.equal(clashes.length, 0, clashes.join('；'));
+  const detail = Array.from(groups.entries())
+    .filter(([, list]) => list.length > 1)
+    .map(([archetype, list]) => `${archetype}×${list.length}`)
+    .join('、');
+  return `同原型分组：${detail}`;
+});
+
+check('全国 34 个省级行政区都有讲解与地标', () => {
+  const provincial = [
+    '北京', '天津', '上海', '重庆', '石家庄', '太原', '呼和浩特', '沈阳', '长春', '哈尔滨',
+    '南京', '杭州', '合肥', '福州', '南昌', '济南', '郑州', '武汉', '长沙', '广州', '南宁', '海口',
+    '成都', '贵阳', '昆明', '拉萨', '西安', '兰州', '西宁', '银川', '乌鲁木齐', '香港', '澳门', '台北',
+  ];
+  const covered = new Set(['北京', '上海', '广州', '西安', '成都', ...Object.values(LANDMARKS_CN).map((item) => item.city)]);
+  const missing = provincial.filter((name) => !covered.has(name));
+  assert.equal(missing.length, 0, `缺少：${missing.join('、')}`);
+  assert.ok(covered.has('台北'), '台湾必须包含在内');
+  return `覆盖 ${provincial.length} 个省级行政区（含台北）`;
 });
 
 let failed = 0;

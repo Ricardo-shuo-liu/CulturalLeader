@@ -194,7 +194,8 @@ def main() -> int:
         drawer_probe['closes'] = driver.execute_script("return !document.getElementById('drawer').classList.contains('open')")
 
         # 缩放到省级视野：应自动显示该省的城市（无需手动选择）
-        driver.execute_script("window.__cl.focusCity('洛阳')")
+        # 用普通地级市（南阳）：洛阳等省会/旅游名城现在是有 3D 地标的重点城市，不再走图层
+        driver.execute_script("window.__cl.focusCity('南阳')")
         time.sleep(5.5)
         view_province = driver.execute_script("return window.__cl.cityLayer()")
 
@@ -252,8 +253,9 @@ def main() -> int:
     print(f"面板展开：{panel_open}，讲解气泡字数：{len(bubble)}")
     print(f"亮度：黎明 {dawn_luma:.1f} / 正午 {noon_luma:.1f} / 夜间 {night_luma:.1f} / 拉开后 {opened_luma:.1f}")
 
-    if labels != 5:
-        failures.append(f"城市标签应为 5 个，实际 {labels}")
+    # 省会/首府/特别行政区补齐后，带 3D 地标的重点城市共 38 座（原先只有 5 座）
+    if labels < 30:
+        failures.append(f"重点城市标签至少应有 30 个，实际 {labels}")
     if not gl:
         failures.append("WebGL 上下文未创建")
     if not panel_open:

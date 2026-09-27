@@ -66,6 +66,8 @@ class ChatRequest(BaseModel):
     city_slug: str
     message: str
     session_id: str | None = None
+    # 城市没有收录（例如地图上随手双击的地级市）时，用名字继续对话
+    city_name: str = ""
 
 
 class AsrResponse(BaseModel):
