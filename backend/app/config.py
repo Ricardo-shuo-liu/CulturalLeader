@@ -18,8 +18,16 @@ class Settings(BaseSettings):
     openai_api_key: str = ""
     openai_base_url: str = ""
     chat_model: str = "gpt-4o-mini"
+    # 语音合成可以单独指向支持 TTS 的服务（例如 OpenAI、Azure 兼容层、硅基流动等）
+    # 留空则回落到 OPENAI_API_KEY / OPENAI_BASE_URL；DeepSeek 这类只有对话接口的服务没有 TTS
+    tts_api_key: str = ""
+    tts_base_url: str = ""
     tts_model: str = "tts-1"
     tts_voice: str = "alloy"
+    # 语音识别（听）也可以单独指向支持 /v1/audio/transcriptions 的服务：
+    # 例如硅基流动 FunAudioLLM/SenseVoiceSmall；留空则回落 OPENAI_API_KEY / OPENAI_BASE_URL
+    asr_api_key: str = ""
+    asr_base_url: str = ""
     asr_model: str = "whisper-1"
 
     mock_mode: str = "auto"
@@ -39,6 +47,40 @@ class Settings(BaseSettings):
     flows_dir: str = str(DATA_DIR / "flows")
     imports_dir: str = str(DATA_DIR / "imports")
     guides_dir: str = str(DATA_DIR / "guides")
+
+    @property
+    def tts_key(self) -> str:
+        return (self.tts_api_key or self.openai_api_key or "").strip()
+
+    @property
+    def tts_endpoint(self) -> str | None:
+        value = (self.tts_base_url or self.openai_base_url or "").strip()
+        return value or None
+
+    @property
+    def asr_key(self) -> str:
+        return (self.asr_api_key or self.openai_api_key or "").strip()
+
+    @property
+    def asr_endpoint(self) -> str | None:
+        value = (self.asr_base_url or self.openai_base_url or "").strip()
+        return value or None
+
+    @property
+    def asr_ready(self) -> bool:
+        if not self.asr_key:
+            return False
+        base = (self.asr_endpoint or "api.openai.com").lower()
+        # DeepSeek 这类纯对话网关没有 /v1/audio/transcriptions
+        return "deepseek" not in base
+
+    @property
+    def tts_ready(self) -> bool:
+        """能不能真正出声：有 Key 且当前服务不是已知的「只有对话、没有 TTS」的服务。"""
+        if not self.tts_key:
+            return False
+        base = (self.tts_endpoint or "api.openai.com").lower()
+        return "deepseek" not in base
 
     @property
     def map_ready(self) -> bool:

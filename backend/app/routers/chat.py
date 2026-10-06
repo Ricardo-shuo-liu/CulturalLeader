@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import uuid
 from collections.abc import AsyncIterator
@@ -10,7 +11,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from ..config import get_settings
+from ..config import DATA_DIR, get_settings
 from ..db import SessionLocal, get_db
 from ..models import ChatSession, City, Knowledge, Message
 from ..schemas import AsrResponse, ChatRequest
@@ -148,8 +149,8 @@ async def asr(file: UploadFile = File(...)) -> AsrResponse:
         raise HTTPException(status_code=400, detail="音频为空")
     try:
         text = await speech.transcribe(data, file.filename or "speech.webm", file.content_type or "audio/webm")
-    except speech.SpeechUnavailable:
-        raise HTTPException(status_code=501, detail="未配置云端语音识别，请使用浏览器语音或文字输入") from None
+    except Exception as error:  # noqa: BLE001
+        raise _speech_http_error(error, "语音识别") from error
     if not text:
         raise HTTPException(status_code=422, detail="没有识别到语音内容")
     return AsrResponse(text=text, engine="openai")
@@ -166,14 +167,35 @@ async def tts(payload: TtsRequest) -> Response:
     return await _synthesize(payload.text)
 
 
+def _speech_http_error(error: Exception, action: str) -> HTTPException:
+    if isinstance(error, speech.SpeechUnavailable):
+        return HTTPException(status_code=501, detail=f"云端{action}不可用，已切换浏览器语音：{error}")
+    if isinstance(error, speech.SpeechProviderError):
+        return HTTPException(status_code=error.status, detail={"code": error.code, "message": str(error)})
+    return HTTPException(status_code=502, detail={"code": "SPEECH_UPSTREAM", "message": f"{action}失败：{error}"})
+
+
+TTS_CACHE_DIR = DATA_DIR / "tts_cache"
+
+
 async def _synthesize(text: str) -> Response:
     text = text.strip()
     if not text:
         raise HTTPException(status_code=400, detail="文本为空")
+    settings = get_settings()
+    # 同一句讲解词只合成一次：重复播报不再花额度，余额紧张时也更耐用
+    cache_key = hashlib.sha1(f"{settings.tts_model}|{settings.tts_voice}|{text}".encode("utf-8")).hexdigest()
+    cached = TTS_CACHE_DIR / f"{cache_key}.mp3"
+    if cached.exists():
+        return Response(content=cached.read_bytes(), media_type="audio/mpeg")
     try:
         audio = await speech.synthesize(text)
-    except speech.SpeechUnavailable:
-        raise HTTPException(status_code=501, detail="未配置云端语音合成，请使用浏览器语音") from None
     except Exception as error:  # noqa: BLE001
-        raise HTTPException(status_code=502, detail=f"语音合成失败：{error}") from error
+        raise _speech_http_error(error, "语音合成") from error
+    try:
+        TTS_CACHE_DIR.mkdir(parents=True, exist_ok=True)
+        cached.write_bytes(audio)
+    except OSError:
+        pass
+    return Response(content=audio, media_type="audio/mpeg")
     return Response(content=audio, media_type="audio/mpeg")

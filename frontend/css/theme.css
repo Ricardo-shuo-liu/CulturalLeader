@@ -201,6 +201,9 @@ body::after {
   background: rgba(20, 29, 34, 0.8);
 }
 
+#voice-status.warn { color: #e0a05a; }
+#voice-status { line-height: 1.8; }
+
 #drawer .drawer-btn.primary {
   border-color: rgba(184, 68, 58, 0.7);
   background: rgba(184, 68, 58, 0.16);

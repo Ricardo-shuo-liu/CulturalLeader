@@ -114,6 +114,23 @@ async function boot() {
   const handlers = {};
   const ui = createUI({ cities, handlers });
 
+  // 语音状态：让用户一眼看出「现在是云端 TTS 还是浏览器合成」
+  fetch('/api/config')
+    .then((response) => (response.ok ? response.json() : null))
+    .then((config) => {
+      const node = document.getElementById('voice-status');
+      if (!node || !config) return;
+      const speak = config.tts_ready ? `云端 TTS（音色 ${config.tts_voice}）` : '浏览器合成';
+      const hear = config.asr_ready ? `云端识别（${config.asr_model}）` : '浏览器识别';
+      node.textContent = `语音输出：${speak} · 语音输入：${hear}`;
+      node.classList.toggle('warn', !config.tts_ready || !config.asr_ready);
+      if (!config.tts_ready || !config.asr_ready) {
+        node.textContent += '（点「语音自检」看修复方法：python tools/check_voice.py）';
+      }
+      window.__cl_voiceHint = config.tts_hint || '';
+    })
+    .catch(() => {});
+
   const canvas = document.getElementById('stage');
   const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
   renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, STAGE.maxPixelRatio));
@@ -318,6 +335,10 @@ async function boot() {
     onError: (message) => {
       ui.toast(message);
       ui.endAssistant();
+      panelChat?.addSystem(message);
+    },
+    onVoiceUnavailable: (message) => {
+      ui.toast(message);
       panelChat?.addSystem(message);
     },
     onSpeakStart: (text) => ui.setSpeech(text, muted),

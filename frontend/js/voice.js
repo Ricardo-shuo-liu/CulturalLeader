@@ -12,6 +12,8 @@ export class VoiceIO {
     this.queue = [];
     this.speaking = false;
     this.ttsUnavailable = false;
+    this.ttsHint = '';
+    this.voiceWarned = false;
     this.asrUnavailable = false;
     this.recorder = null;
     this.chunks = [];
@@ -161,8 +163,18 @@ export class VoiceIO {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ text }),
         });
-        if (response.status === 501) {
+        if (!response.ok) {
+          // 501 = 没配云端语音；402 = 余额不足；502 = 服务不支持 TTS。
+          // 统一标记为不可用（不再每句话重试），并把原因告诉用户一次。
           this.ttsUnavailable = true;
+          try {
+            const detail = await response.json();
+            this.ttsHint =
+              typeof detail?.detail === 'string' ? detail.detail : detail?.detail?.message || detail?.detail?.code || '';
+          } catch (error) {
+            this.ttsHint = '';
+          }
+          this.notifyVoiceUnavailable(this.ttsHint || '云端语音不可用，已切换浏览器语音');
         } else if (response.ok) {
           const blob = await response.blob();
           this.ensureAudio();
@@ -189,19 +201,66 @@ export class VoiceIO {
     await this.browserSpeak(text);
   }
 
-  browserSpeak(text) {
+  /** 浏览器语音：等语音列表加载、优先挑中文音色；没有音色就明确告知「出不了声」。 */
+  async browserSpeak(text) {
+    const estimate = () => new Promise((resolve) => setTimeout(resolve, Math.max(700, text.length * 130)));
     if (!('speechSynthesis' in window)) {
-      return new Promise((resolve) => setTimeout(resolve, Math.max(700, text.length * 120)));
+      this.notifyVoiceUnavailable('这个浏览器不支持语音合成，请配置 TTS_API_KEY / TTS_BASE_URL 后使用云端语音');
+      return estimate();
     }
+    const synth = window.speechSynthesis;
+    let voices = synth.getVoices() || [];
+    if (!voices.length) {
+      voices = await new Promise((resolve) => {
+        const timer = setTimeout(() => resolve(synth.getVoices() || []), 1200);
+        synth.addEventListener?.('voiceschanged', () => {
+          clearTimeout(timer);
+          resolve(synth.getVoices() || []);
+        }, { once: true });
+      });
+    }
+    if (!voices.length) {
+      this.notifyVoiceUnavailable(
+        '系统里没有可用的语音包（Linux 常见）：安装 speech-dispatcher 或 espeak-ng 后重启浏览器即可出声；也可以配置 TTS_API_KEY / TTS_BASE_URL 用云端语音',
+      );
+      return estimate();
+    }
+    const chinese = voices.filter(
+      (voice) => /^zh/i.test(voice.lang || '') || /(Chinese|Mandarin|中文|普通话|Kangkang|Huihui|Yaoyao)/i.test(voice.name || ''),
+    );
+    if (!chinese.length) {
+      // 没有中文音色时不要用英文音色硬读中文（听起来就是“奇怪的语音”）
+      this.notifyVoiceUnavailable(
+        `系统里没有中文语音包，已停止朗读以免听不清（可用音色：${voices.length} 个）。` +
+          '安装 speech-dispatcher / espeak-ng 或配置云端 TTS 后即可正常出声',
+      );
+      return estimate();
+    }
+    const preferred =
+      chinese.find((voice) => /zh[-_]CN/i.test(voice.lang) && /(Xiaoxiao|Yunxi|Ting|Mei|Huihui|Yaoyao)/i.test(voice.name)) ||
+      chinese.find((voice) => /zh[-_]CN/i.test(voice.lang)) ||
+      chinese[0];
     return new Promise((resolve) => {
       const utterance = new SpeechSynthesisUtterance(text);
-      utterance.lang = 'zh-CN';
+      utterance.lang = preferred?.lang || 'zh-CN';
+      if (preferred) utterance.voice = preferred;
       utterance.rate = 1.02;
       utterance.pitch = 1.0;
       utterance.onend = () => resolve();
       utterance.onerror = () => resolve();
-      window.speechSynthesis.speak(utterance);
+      try {
+        synth.speak(utterance);
+      } catch (error) {
+        this.notifyVoiceUnavailable('浏览器语音播放失败，可配置 TTS_API_KEY / TTS_BASE_URL 使用云端语音');
+        resolve();
+      }
     });
+  }
+
+  notifyVoiceUnavailable(message) {
+    if (this.voiceWarned) return;
+    this.voiceWarned = true;
+    this.handlers.onVoiceUnavailable?.(message);
   }
 
   stopSpeaking() {

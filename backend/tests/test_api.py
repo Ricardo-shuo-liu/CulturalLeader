@@ -119,15 +119,23 @@ def test_chat_missing_city_returns_404(client: TestClient):
     assert response.status_code == 404
 
 
-def test_speech_endpoints_degrade_to_501(client: TestClient):
+def test_speech_endpoints_degrade_gracefully(client: TestClient):
+    """云端语音不可用时的契约：
+    501 未配置 / 402 余额不足 / 409 Key 无效 / 429 限流 / 502 上游异常——关键是不能 500，且原因可读。
+    """
+    allowed = (200, 402, 409, 429, 501, 502)
     tts = client.post("/api/tts", json={"text": "你好"})
-    assert tts.status_code == 501
+    assert tts.status_code in allowed, tts.text
+    if tts.status_code != 200:
+        detail = tts.json()["detail"]
+        message = detail if isinstance(detail, str) else detail.get("message", "")
+        assert "语音" in message
 
     asr = client.post(
         "/api/asr",
         files={"file": ("speech.webm", b"fake-audio-bytes", "audio/webm")},
     )
-    assert asr.status_code == 501
+    assert asr.status_code in allowed, asr.text
 
 
 def test_route_solve_returns_optimal_tour(client: TestClient):

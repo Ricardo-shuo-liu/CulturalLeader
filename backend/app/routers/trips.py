@@ -76,6 +76,19 @@ def public_config() -> dict:
         "map_js_key": settings.tencent_map_js_key,
         "map_ready": settings.map_ready,
         "allow_estimate": settings.allow_estimate,
+        "asr_ready": settings.asr_ready,
+        "asr_model": settings.asr_model,
+        "asr_endpoint": settings.asr_endpoint or "api.openai.com",
+        "tts_ready": settings.tts_ready,
+        "tts_voice": settings.tts_voice,
+        "tts_endpoint": settings.tts_endpoint or "api.openai.com",
+        "tts_hint": ""
+        if settings.tts_ready
+        else (
+            f"当前地址（{settings.tts_endpoint or 'api.openai.com'}）没有可用的语音合成："
+            "把 TTS_BASE_URL / TTS_API_KEY 指向支持 TTS 的服务（如 OpenAI、Azure 兼容层），"
+            "或使用浏览器语音（Linux 需安装 speech-dispatcher / espeak-ng）"
+        ),
     }
 
 

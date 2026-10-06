@@ -143,6 +143,25 @@ Node 未安装时可用便携版：`.tools/node/bin/node`（`check_all.sh` 会�
   拖拽/缩放/比例尺/指北针齐全）；没有 Key 时通勤时长降级为直线估算并标注「估算」。
   排障可强制走降级底图：`http://127.0.0.1:8000/?map=canvas`
 
+## 语音（TTS / ASR）
+
+数字人的声音可以独立配置，不影响对话模型：
+
+```ini
+TTS_BASE_URL=https://api.siliconflow.cn/v1          # 或 https://api.openai.com/v1
+TTS_API_KEY=sk-...
+TTS_MODEL=FunAudioLLM/CosyVoice2-0.5B               # OpenAI 用 tts-1
+TTS_VOICE=FunAudioLLM/CosyVoice2-0.5B:claire        # 女声；男声 alex/benjamin/charles
+ASR_BASE_URL=https://api.siliconflow.cn/v1          # 按住说话
+ASR_API_KEY=sk-...
+ASR_MODEL=FunAudioLLM/SenseVoiceSmall
+```
+
+- 自检：`python tools/check_voice.py`（分别实测语音合成与识别，并给出修复方法）
+- 试听挑音色：`python tools/tts_voice_samples.py`（8 个内置音色各生成一段样例，并用基频判断男女声）
+- 相同文本的语音会缓存到 `data/tts_cache/`，重复播报不再消耗额度
+- 云端不可用时自动退回浏览器语音；若系统没有中文音色，会提示而不是用英文音色硬读中文
+
 ## 抄作业：攻略链接一键导入
 
 「我的攻略 → 导入攻略（抄作业）」支持三条入口：**粘贴链接 / 粘贴正文 / 上传截图**。
