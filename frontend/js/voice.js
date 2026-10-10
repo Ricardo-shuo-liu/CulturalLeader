@@ -78,6 +78,36 @@ export class VoiceIO {
       throw new Error(`对话请求失败：${response.status}`);
     }
 
+    return this.consumeStream(response, sessionId);
+  }
+
+  /** 穿越对话：与指定朝代的数字人聊天，可带地点或诗词上下文，SSE 结构同城市对话。 */
+  async askDynasty(dynastyKey, { placeId = null, poemId = null, message = '', sessionId = null } = {}) {
+    this.abortController?.abort();
+    this.abortController = new AbortController();
+    const response = await fetch(`/api/dynasty/${encodeURIComponent(dynastyKey)}/chat`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ message, place_id: placeId, poem_id: poemId, session_id: sessionId || null }),
+      signal: this.abortController.signal,
+    });
+    if (!response.ok || !response.body) {
+      let hint = `对话请求失败：${response.status}`;
+      try {
+        const detail = (await response.json())?.detail;
+        if (typeof detail === 'string') hint = detail;
+        else if (detail?.message) hint = detail.message;
+      } catch (error) {
+        /* 解析失败时保留默认提示 */
+      }
+      throw new Error(hint);
+    }
+
+    return this.consumeStream(response, sessionId);
+  }
+
+  /** 读取 SSE 流并分发事件：城市对话与穿越对话共用同一套解析。 */
+  async consumeStream(response, sessionId) {
     const reader = response.body.getReader();
     const decoder = new TextDecoder();
     let buffer = '';
@@ -180,7 +210,15 @@ export class VoiceIO {
           this.ensureAudio();
           const url = URL.createObjectURL(blob);
           this.audio.src = url;
-          await this.audio.play();
+          try {
+            await this.audio.play();
+          } catch (error) {
+            // 浏览器自动播放策略拦截（还没有用户手势时很常见）：只让这一句先用浏览器语音，
+            // 不要把云端 TTS 判成不可用——否则一次拦截会让整个会话都退回浏览器语音。
+            URL.revokeObjectURL(url);
+            this.notifyVoiceUnavailable('浏览器拦截了自动播放：点一下页面任意处再试；本次先用浏览器语音。');
+            return this.browserSpeak(text);
+          }
           await new Promise((resolve) => {
             const done = () => {
               this.audio.removeEventListener('ended', done);

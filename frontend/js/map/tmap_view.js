@@ -1,7 +1,9 @@
 // 城内地图视图：腾讯地图 GL（TMap）优先 —— 连续拖拽 / 滚轮与双指缩放 / 双击放大 / 比例尺 / 指北针；
 // 没有 JS Key 或脚本加载失败时自动降级为自建矢量底图（同一套 Web Mercator 投影 + 行政区边界 + 我们的路线）。
 
-import { createView, panView, projectToScreen, scaleBarKm, unprojectScreen, viewForPoints, zoomViewAt } from './mercator.js';
+import { createView, mercatorUnproject, panView, projectToScreen, scaleBarKm, unprojectScreen, viewForPoints, zoomViewAt } from './mercator.js';
+import { nightAlphaAt, terminatorPoints, twilightAt } from './playback.js';
+import { sunAltitudeAt } from '../solar.js';
 
 const SCRIPT_BASE = 'https://map.qq.com/api/gljs?v=1.exp';
 
@@ -67,6 +69,18 @@ export function createMapView({ container, tmap, onStopClick, onMapClick } = {})
   const markerNodes = new Map();
   let legLayer = null;
   const legNodes = [];
+  // 推演：旅行者光点、已走路径、昼夜层
+  let travelerNode = null;
+  let travelerPoint = null;
+  let travelledPoints = [];
+  let travelledLine = null;
+  let nightCanvas = null;
+  let nightCtx = null;
+  let nightSmall = null;
+  let nightImage = null;
+  let nightDate = null;
+  let nightEnabled = false;
+  let nightAt = 0;
   let ignoreClicksUntil = 0;
   let points = [];
   let color = '#f2c879';
@@ -93,6 +107,8 @@ export function createMapView({ container, tmap, onStopClick, onMapClick } = {})
         renderOverlayInfo();
         updateMarkerPositions();
         updateLegLabelPositions();
+        renderTraveller();
+        renderNightLayer();
       };
       ['zoom', 'center_changed', 'bounds_changed', 'idle', 'moving'].forEach((event) => {
         try {
@@ -357,6 +373,33 @@ export function createMapView({ container, tmap, onStopClick, onMapClick } = {})
       ctx.fillText(text, midX, midY + 3);
     });
 
+    // 3.5) 推演：已走路径 + 旅行者光点
+    if (travelledPoints.length >= 2) {
+      ctx.strokeStyle = 'rgba(255, 230, 176, 0.95)';
+      ctx.lineWidth = 5;
+      ctx.beginPath();
+      travelledPoints.forEach((point, index) => {
+        const position = toScreen(point);
+        if (index === 0) ctx.moveTo(position.x, position.y);
+        else ctx.lineTo(position.x, position.y);
+      });
+      ctx.stroke();
+    }
+    if (travelerPoint) {
+      const position = toScreen(travelerPoint);
+      ctx.beginPath();
+      ctx.fillStyle = 'rgba(255, 214, 130, 0.28)';
+      ctx.arc(position.x, position.y, 16, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.beginPath();
+      ctx.fillStyle = '#ffe6b0';
+      ctx.arc(position.x, position.y, 7, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.strokeStyle = 'rgba(58, 42, 8, 0.9)';
+      ctx.lineWidth = 2;
+      ctx.stroke();
+    }
+
     // 4) 点位
     points.forEach((point, index) => {
       const position = toScreen(point);
@@ -375,6 +418,117 @@ export function createMapView({ container, tmap, onStopClick, onMapClick } = {})
       ctx.fillText(point.name || '', position.x, position.y - 20);
     });
     renderOverlayInfo();
+  }
+
+  /** 已走路径：GL 加一条更亮的高亮线，canvas 直接重绘。 */
+  function renderTravelled() {
+    if (kind !== 'tencent' || !map || !tmap) return;
+    if (travelledLine) {
+      travelledLine.setMap?.(null);
+      travelledLine = null;
+    }
+    if (travelledPoints.length < 2) return;
+    const paths = travelledPoints.map((point) => new tmap.LatLng(point.lat, point.lng));
+    const geometry = (id, styleId) =>
+      tmap.PolylineGeometry ? new tmap.PolylineGeometry({ id, styleId, paths }) : { id, styleId, paths };
+    travelledLine = new tmap.MultiPolyline({
+      map,
+      styles: {
+        done: new tmap.PolylineStyle({ color: '#ffe6b0', width: 7, borderWidth: 2, borderColor: '#3a2a08', lineCap: 'round' }),
+      },
+      geometries: [geometry('done', 'done')],
+    });
+  }
+
+  function ensureNightCanvas() {
+    if (nightCanvas) return nightCanvas;
+    nightCanvas = document.createElement('canvas');
+    nightCanvas.className = 'map-night-layer';
+    nightCtx = nightCanvas.getContext('2d');
+    nightSmall = document.createElement('canvas');
+    nightSmall.width = 64;
+    nightSmall.height = 40;
+    container.appendChild(nightCanvas);
+    return nightCanvas;
+  }
+
+  /** 昼夜层：小网格按太阳高度角着色，再放大平滑，得到真实的晨昏线。 */
+  function renderNightLayer(force = false) {
+    const now = Date.now();
+    if (!force && now - nightAt < 250) return;
+    nightAt = now;
+    if (!nightEnabled || !nightDate) {
+      if (nightCanvas) nightCtx.clearRect(0, 0, nightCanvas.width, nightCanvas.height);
+      return;
+    }
+    const area = bounds();
+    if (!area) return;
+    const { width, height } = containerSize();
+    ensureNightCanvas();
+    if (nightCanvas.width !== width || nightCanvas.height !== height) {
+      nightCanvas.width = width;
+      nightCanvas.height = height;
+    }
+    const cols = nightSmall.width;
+    const rows = nightSmall.height;
+    if (!nightImage) nightImage = nightCtx.createImageData(cols, rows);
+    for (let row = 0; row < rows; row += 1) {
+      const lat = area.maxLat + ((area.minLat - area.maxLat) * (row + 0.5)) / rows;
+      for (let col = 0; col < cols; col += 1) {
+        const lng = area.minLng + ((area.maxLng - area.minLng) * (col + 0.5)) / cols;
+        const altitude = sunAltitudeAt(lng, lat, nightDate);
+        const alpha = nightAlphaAt(altitude);
+        const twilight = twilightAt(altitude);
+        const index = (row * cols + col) * 4;
+        nightImage.data[index] = 12 + Math.round(twilight * 120);
+        nightImage.data[index + 1] = 16 + Math.round(twilight * 58);
+        nightImage.data[index + 2] = 28 + Math.round(twilight * 10);
+        nightImage.data[index + 3] = Math.round(alpha * 255);
+      }
+    }
+    nightSmall.getContext('2d').putImageData(nightImage, 0, 0);
+    nightCtx.clearRect(0, 0, width, height);
+    nightCtx.imageSmoothingEnabled = true;
+    nightCtx.drawImage(nightSmall, 0, 0, cols, rows, 0, 0, width, height);
+    // 晨昏线：细亮线 + 一层暖色微光
+    const line = terminatorPoints(area, nightDate, { rows: 28, steps: 48 });
+    if (line.length >= 2) {
+      nightCtx.beginPath();
+      line.forEach((point, index) => {
+        const x = ((point.lng - area.minLng) / (area.maxLng - area.minLng)) * width;
+        const y = ((area.maxLat - point.lat) / (area.maxLat - area.minLat)) * height;
+        if (index === 0) nightCtx.moveTo(x, y);
+        else nightCtx.lineTo(x, y);
+      });
+      nightCtx.strokeStyle = 'rgba(255, 206, 138, 0.85)';
+      nightCtx.lineWidth = 1.6;
+      nightCtx.shadowColor = 'rgba(255, 190, 110, 0.65)';
+      nightCtx.shadowBlur = 8;
+      nightCtx.stroke();
+      nightCtx.shadowBlur = 0;
+    }
+  }
+
+  function renderTraveller() {
+    if (kind !== 'tencent') return;
+    if (!travelerPoint) {
+      travelerNode?.remove();
+      travelerNode = null;
+      return;
+    }
+    if (!travelerNode) {
+      travelerNode = document.createElement('div');
+      travelerNode.className = 'map-traveler';
+      travelerNode.innerHTML = '<span class="map-traveler-core"></span><span class="map-traveler-halo"></span>';
+      container.appendChild(travelerNode);
+    }
+    const pixel = pointPixel(travelerPoint);
+    if (!pixel) {
+      travelerNode.style.display = 'none';
+      return;
+    }
+    travelerNode.style.display = 'block';
+    travelerNode.style.transform = `translate(${Math.round(pixel.x)}px, ${Math.round(pixel.y)}px)`;
   }
 
   function renderTencent() {
@@ -409,11 +563,38 @@ export function createMapView({ container, tmap, onStopClick, onMapClick } = {})
   function render() {
     // 任何绘制异常都不应该影响相机定位与交互
     try {
-      if (kind === 'tencent') renderTencent();
-      else renderCanvas();
+      if (kind === 'tencent') {
+        renderTencent();
+        renderTravelled();
+        renderTraveller();
+      } else renderCanvas();
     } catch (error) {
       console.warn('[map] 覆盖物绘制失败：', error?.message || error);
     }
+  }
+
+  /** 当前视野的经纬度范围（昼夜层采样用）。 */
+  function bounds() {
+    if (kind === 'tencent' && map?.getBounds) {
+      try {
+        const raw = map.getBounds();
+        const ne = raw.getNorthEast();
+        const sw = raw.getSouthWest();
+        return { minLng: sw.getLng(), maxLng: ne.getLng(), minLat: sw.getLat(), maxLat: ne.getLat() };
+      } catch (error) {
+        /* 退回画布范围 */
+      }
+    }
+    const { width, height } = containerSize();
+    const topLeft = mercatorUnproject(
+      view.center.lng - 0,
+      view.center.lat - 0,
+      view.zoom,
+    );
+    const northWest = unprojectScreen(0, 0, { ...view, width, height });
+    const southEast = unprojectScreen(width, height, { ...view, width, height });
+    void topLeft;
+    return { minLng: northWest.lng, maxLng: southEast.lng, minLat: southEast.lat, maxLat: northWest.lat };
   }
 
   function fit() {
@@ -603,6 +784,7 @@ export function createMapView({ container, tmap, onStopClick, onMapClick } = {})
   const resize = () => {
     if (canvas) renderCanvas();
     else if (map?.resize) map.resize();
+    renderNightLayer(true);
   };
   window.addEventListener('resize', resize);
   if (typeof ResizeObserver !== 'undefined') {
@@ -644,6 +826,47 @@ export function createMapView({ container, tmap, onStopClick, onMapClick } = {})
     setSelected(id) {
       selectedId = id || null;
       render();
+    },
+    /** 旅行者光点（推演用）；传 null 隐藏。 */
+    setTraveler(point) {
+      travelerPoint = point && Number.isFinite(point.lng) ? { lng: point.lng, lat: point.lat } : null;
+      if (kind === 'tencent') renderTraveller();
+      else renderCanvas();
+    },
+    /** 已走过的路径高亮。 */
+    setTravelled(next) {
+      travelledPoints = (next || []).filter((point) => Number.isFinite(point?.lng) && Number.isFinite(point?.lat));
+      if (kind === 'tencent') renderTravelled();
+      else renderCanvas();
+    },
+    /** 昼夜层：date 为模拟时刻，enabled=false 时清除。 */
+    setNightLayer({ date = null, enabled = true } = {}) {
+      nightEnabled = Boolean(enabled);
+      nightDate = date || null;
+      ensureNightCanvas();
+      renderNightLayer(true);
+    },
+    /** 视野经纬度范围（测试与昼夜层用）。 */
+    bounds,
+    /** 把地图中心移到某个点（跟随模式用）。 */
+    centerOn(point) {
+      if (!point || !Number.isFinite(point.lng)) return;
+      if (kind === 'tencent' && map?.setCenter && window.TMap) {
+        map.setCenter(new window.TMap.LatLng(point.lat, point.lng));
+        return;
+      }
+      view.center = { lng: point.lng, lat: point.lat };
+      renderCanvas();
+    },
+    /** 昼夜层是否已绘制（自动化验收用）。 */
+    nightInfo() {
+      return {
+        enabled: nightEnabled,
+        date: nightDate ? nightDate.toISOString() : null,
+        canvas: Boolean(nightCanvas),
+        width: nightCanvas?.width || 0,
+        height: nightCanvas?.height || 0,
+      };
     },
     /** 屏幕坐标（含 kind），供长按拖拽排序使用。 */
     screenPositions() {

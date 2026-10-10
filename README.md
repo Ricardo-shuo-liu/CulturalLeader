@@ -1,206 +1,80 @@
 # CulturalLeader · 文旅地图数字人平台
 
-立体浮雕沙盘式的文旅地图舞台：中国地图是一块可以环绕观看的浅浮雕沙盘，山脉真实隆起、
-国境实描边，城市光点贴在真实经纬度上；点击城市后地标从沙盘上升起，数字人讲解并支持语音问答。
+立体浮雕沙盘式的文旅地图舞台：中国地图是一块可以环绕观看的浅浮雕沙盘，山脉真实隆起、国境实描边，
+城市光点贴在真实经纬度上；点击城市后地标从沙盘上升起，数字人讲解并支持语音问答。
 场景光照由天文算法按真实时刻驱动，晨昏线会真的扫过中国版图。
+
+在沙盘之上还有三件事：**把旅行排明白**（双击城市进真实地图编排，用 LKH-3.0.14 的 TSPTW 重优化，
+组合成整体攻略并可播放推演）、**把别人的攻略抄进来**（链接 / 正文 / 截图解析成计划块）、
+**穿越回唐 / 宋 / 明**（底图整体换成该朝示意疆域，看历史地名与浮起的光韵诗字，并与数字人讨论）。
+
+## 核心能力
+
+| 能力 | 说明 |
+| --- | --- |
+| 沙盘与日照 | 340×196 浮雕地形 + 敦煌壁画地台；逐片元按真实经纬度计算昼夜与晨昏线，可拖动时间滑块演示 |
+| 城市与地标 | 369 座城市按视野分级标注；38 座城市有程序化 3D 地标，同原型靠专属部件区分 |
+| 数字人与语音 | Live2D（迁移自 Fay）+ 云端 TTS / ASR，大模型对话贯穿沙盘、流程编辑与穿越模式 |
+| 行程规划 | 双击城市 → 腾讯地图编排点位 → LKH-TSPTW 重优化 → 计划块 → 整体攻略 → 只读分享页 |
+| 播放推演 | 旅行者光点按时间表推进，昼夜层与晨昏线随模拟时刻扫过，支持整份攻略多天连播 |
+| 攻略导入 | 粘贴链接 / 正文 / 截图，解析出「一城一天」计划块，低置信度点位在地图上手动落位 |
+| 穿越系统 | 唐 / 宋 / 明 示意疆域 + 历史地名 + **光韵诗字**（代表诗词浮在写作地上方）+ 朝代人格对话 |
 
 ## 快速开始
 
 ```bash
 conda activate leader
 pip install -r requirements.txt          # 官方源慢可加 -i https://mirrors.aliyun.com/pypi/simple/
-python tools/vendor_frontend.py          # 一次性：把 three / three-vrm 拉到 frontend/vendor
+python tools/vendor_frontend.py          # 一次性：把 three 拉到 frontend/vendor（离线可用）
 ./run.sh                                 # http://127.0.0.1:8000/
 ```
 
-端口被占用时 `run.sh` 会提示占用进程并自动改用下一个空闲端口；`PORT=9000 ./run.sh` 可指定端口。
-后台在 <http://127.0.0.1:8000/admin>，默认令牌 `dev-token`（改 `.env` 里的 `ADMIN_TOKEN`）。
+- 端口被占用时 `run.sh` 会提示占用进程并自动顺延，`PORT=9000 ./run.sh` 可指定端口；
+- 后台在 <http://127.0.0.1:8000/admin>，默认令牌 `dev-token`（改 `.env` 里的 `ADMIN_TOKEN`）；
+- `.env` 里配 `OPENAI_API_KEY`（对话）、`TTS_*` / `ASR_*`（语音）、`TENCENT_MAP_*`（地图与通勤时长）；
+  全都没配也能跑：城市讲解走本地知识库、城内地图走自建矢量底图、通勤时长标注「估算」。
 
-## 巡游路线（LKH-3.0.14）
+## 文档
 
-点击左上角「路线规划」进入多选模式：点城市加入或移除，选好后点「求解最优路线」，
-后端会把选中城市写成 TSPLIB GEO 实例并调用**本地 LKH-3.0.14** 求最短巡回，
-结果以金色航线画在地图上（带流动光点），并按顺序给城市编号，数字人播报总里程与顺序。
-
-- 求解器位置：`LKH-3.0.14/LKH`，若不存在会自动退回内置「最近邻 + 2-opt」并在界面标注。
-- 重新编译：`make -C LKH-3.0.14`（需要 gcc/make，已在本机编译通过）。
-- 距离口径：LKH 用 TSPLIB GEO（先纬度后经度），显示里程用 haversine，两者已交叉校验
-  （五城示例：LKH 5044 km vs haversine 5036 km，误差 0.2%）。
-
-## 操作方式
-
-| 操作 | 效果 |
+| 文档 | 内容 |
 | --- | --- |
-| 左键拖动 | 环绕旋转（俯仰限制在接近垂直与接近水平之间，不会转到地平面以下） |
-| 滚轮 / 双指捏合 | 缩放（2.2 – 11 个世界单位） |
-| 右键拖动 | 平移，范围限制在沙盘附近 |
-| 悬停光点 | 光点放大，城市名浮动 |
-| 点击光点 | 相机飞向该城市，地标从地图上升起，数字人开始讲解 |
-| 右上时刻牌 | 展开时间滑块做日照演示，`回到实时` 恢复跟随 |
-| 左上「路线规划」 | 进入多选模式，点城市加入/移除，求解 LKH 最优巡回 |
-
-URL 覆盖：`?t=2026-09-23T06:30` 或 `?t=06:30`，`?live=0` 关闭实时跟随。
-
-## 舞台构成
-
-```
-浮雕沙盘（y 轴向上）   340×196 高度场：10 条主脊真实隆起，山脊明暗随时段变化
-国境描边               2.6px 实描边 + 6px 冷色外发光，省界一并绘出
-城市光点               贴在浮雕表面，正对相机，按所在地真实昼夜独立亮灭
-壁画地台               敦煌风格程序化壁画：紧贴沙盘的矩形纹样边框（联珠/卷草/忍冬 +
-                       四角藻井），外圈莲花、云气与飘带；中央按沙盘轮廓掏空
-                       （实测沙盘两侧暖色壁画像素占比 89%）
-地面光池               中心墨色光池 + 墨云纹理（加色混合），随时段与经度改变色调
-天穹                   大球渐变背景，任何视角都不会出现纯黑
-幕布（z=-13.5）        120×66 的两片对开水墨绸幕，幕上有远山剪影，夜间浮出星点
-空气层                 760 颗缓慢上浮的尘埃微粒，夜间更暖更亮
-地标                   点击城市后从沙盘该点升起，含瓦垄/砖纹/窗棂/彩画额枋等程序化细节
-                       天坛（三层汉白玉台+栏杆+十二柱+三层琉璃檐+宝顶）、
-                       东方明珠（三撑柱+三球经纬环+幕墙窗格）、
-                       广州塔（双曲塔身+24 根斜肋+8 道环+观景台）、
-                       钟楼（砖砌台基+斗栱+彩画额枋+四角攒尖+脊兽）、
-                       熊猫塔（线脚塔身+五个球舱+环廊）
-数字人（Live2D）       独立透明画布常驻右下：Cubism 5 模型 + 音频包络驱动口型
-                       （ParamMouthOpenY）/ 自动眨眼 / 视线跟随 / Idle 与 TapBody 动作
-                       未放模型时显示接入引导卡片（迁移自 Fay，详见专门文档）
-画面收边               径向暗角 + 顶部压暗，让沙盘成为视觉中心
-```
-
-参数集中在 `frontend/js/config.js`（沙盘跨度、隆起高度、相机限制、幕布尺寸），
-山脊走向在 `frontend/js/data/ranges.js`，地标几何在 `frontend/js/landmarks.js`。
-
-## 真实日照（实测数据）
-
-浏览器实测（无头 Firefox，隐藏界面后按真实经纬度取样）：
-
-| 取样点 | 06:30 | 12:00 | 23:00 | 06:30 色温 |
-| --- | --- | --- | --- | --- |
-| 南京附近 118.8E,32.1N | 48.2 | 36.9 | 10.6 | 暖 +6.4 |
-| 天山北麓 87.6E,43.8N | 11.1 | 37.8 | 9.7 | 冷 −8.0 |
-
-即 06:30 时东部已被金色晨光照亮、西部仍在夜色中；正午两地都亮，夜间都暗。
-地图区域另有 7100+ 高亮轮廓像素与 11000+ 强边缘像素，国境线与山脉层次都清晰可辨。
+| [docs/01-沙盘与日照](docs/01-沙盘与日照.md) | 舞台构成、操作方式、真实日照实测、城市标注与 3D 地标 |
+| [docs/02-行程规划与攻略](docs/02-行程规划与攻略.md) | 巡游 LKH 求解、腾讯 Key、流程编辑、整体攻略、接口与数据 |
+| [docs/03-穿越系统](docs/03-穿越系统.md) | 唐 / 宋 / 明：示意疆域、历史地名、光韵诗字、朝代对话 |
+| [docs/04-语音与数字人](docs/04-语音与数字人.md) | TTS / ASR 配置、Live2D 换模型、数字人出现的场景 |
+| [docs/05-开发与校验](docs/05-开发与校验.md) | 目录结构、环境变量、脚本一览、全量校验、常见问题 |
+| [docs/数字人（Live2D）接入说明](docs/数字人（Live2D）接入说明.md) | 模型配置细节与常见问题 |
+| [docs/Cubism5资源获取指南](docs/Cubism5资源获取指南.md) | 模型从哪来、怎么自制/委托、授权怎么算 |
 
 ## 目录
 
 ```
-backend/app        FastAPI（城市/对话/语音/后台）+ SQLite
-backend/tests      pytest：接口、后台鉴权、Mock 降级
+backend/app        FastAPI（城市/对话/语音/流程/攻略/穿越/后台）+ SQLite
+backend/app/data   内置数据（城市、地级市、省界、历史朝代：唐/宋/明 疆域与诗词）
+backend/tests      pytest：接口、后台鉴权、Mock 降级、穿越数据与对话
 frontend/js        舞台渲染、浮雕地形、天文日照、地标、语音
-frontend/js/fay    Fay 风格数字人（Live2D 加载/口型/动作/动作语义映射）
+frontend/js/map    城内地图、城市流程、整体攻略、播放推演、穿越模式、诗词光韵
+frontend/js/fay    Fay 风格数字人（Live2D 加载/口型/动作）
 frontend/assets/live2d  Live2D 模型与 config.json
-docs/              文档（含 Live2D 接入说明）
-THIRD_PARTY_LICENSES.md  第三方组件与许可
-frontend/vendor    本地 ESM 依赖（tools/vendor_frontend.py 生成，离线可用）
-tools              依赖抓取、轮廓数据、旧数据迁移、各类校验脚本
+frontend/vendor    本地 ESM 依赖（离线可用）
+docs/              分类文档（本目录）
+tools              依赖抓取、轮廓数据、迁移与各类校验脚本
+data/              本机数据（flows / guides / imports / tts_cache，不进 git）
 ```
 
 ## 校验
 
 ```bash
-./tools/check_all.sh                                    # 后端 31 项 + 前端 22 项 + 全部 JS 语法
-python tools/check_live2d_model.py                      # Live2D 模型是否满足接入要求
-python tools/fetch_cities_cn.py                         # 重新生成全国城市清单（可选）
-python tools/check_map.py                               # 腾讯位置服务 Key 自检（类型/配额/接口可用性）
-python tools/migrate_trips.py --dry-run                 # 旧行程 → 城市流程 + 整体攻略（幂等，可演练）
-./run.sh &                                              # 另开一个终端
-python tools/browser_check.py                           # 沙盘/数字人/路线/省份点击端到端
-python tools/browser_check_flows.py                     # 双击城市→流程编辑→优化→攻略→分享页（含无 Key 降级路径）
-python tools/browser_check_planner.py                   # 兼容入口，转发到上面这个脚本
-python tools/analyze_shots.py                           # 截图像素统计
+./tools/check_all.sh                     # 后端 59 项 + 前端 35 项 + 全部 JS 语法
+./run.sh &                               # 另开终端启动服务，然后跑浏览器端到端：
+python tools/browser_check.py            # 沙盘 / 数字人 / 路线 / 省份点击
+python tools/browser_check_flows.py      # 双击城市 → 流程编辑 → 优化 → 攻略 → 分享页
+python tools/browser_check_dynasty.py    # 穿越系统：唐/宋/明 底图、光韵诗字、诗词、朝代对话
 ```
 
-`browser_check.py` 用系统自带 Firefox（无头）验证 WebGL 启动、页面零错误、相机可旋转可缩放、
-点击城市后地标升起、讲解气泡有内容，以及**路线规划**（选五城 → LKH 求解 → 结果与地图航线）；
-`analyze_shots.py` 用真实经纬度采样点比较不同时刻的明暗与色温，并检查国境描边、
-壁画可见性、极端视角纯黑占比与航线金色像素。
+更多脚本（Key 自检、语音自检、旧数据迁移、截图像素统计等）见 [docs/05-开发与校验](docs/05-开发与校验.md)。
 
-Node 未安装时可用便携版：`.tools/node/bin/node`（`check_all.sh` 会自动识别）。
+## 许可
 
-## 无 Key 降级
-
-不配置 `OPENAI_API_KEY` 时自动进入 Mock 模式：讲解词来自本地知识库，语音走浏览器
-`SpeechSynthesis`，语音识别走浏览器 `SpeechRecognition`（不可用时退回文字输入）。
-配置 `.env` 后即可切换到真实大模型与语音。
-
-## 城市流程与整体攻略（沙盘 + 腾讯地图 + LKH-TSPTW）
-
-**双击沙盘上的任意城市** → 进入这座城市的**游玩流程编辑**：真实可拖拽、滚轮缩放、双击放大的
-腾讯 GL 地图，左侧编排点位（搜索 POI、附近推荐、停留时长、固定预约、锁定、步行/打车/公交），
-「重新优化」由 **LKH-3.0.14 TSPTW** 按营业时间与真实通勤时长求最优顺序，支持长按拖拽调序。
-
-**单击有 3D 建模的城市**看地标与讲解——全国 **38 座**：4 座直辖市、23 座省会、5 座自治区首府、
-香港 / 澳门 / 台北，外加洛阳、敦煌、桂林、苏州四座旅游名城；**单击其他城市**出浮动卡片。
-把多座城市的流程在「☰ 导航 → 我的攻略」里逐天组合，就是一份**整体攻略**：
-自动汇总总里程/总时长/每日结束时间与城际段，可调序、替换某城流程、导出 JSON，
-并生成**只读分享页** `/share/<token>`。
-
-- 使用与配置：[docs/行程路径规划使用说明.md](docs/行程路径规划使用说明.md)
-- 后端：`backend/app/services/tencent_map.py`（缓存/限流/配额/降级）、`trip_optimizer.py`（TSPTW）、
-  `flow_store.py`（城市流程）、`guide_store.py` + `guide_builder.py`（整体攻略）
-- 接口：`/api/flows*`、`/api/guides*`、`/api/geo/cities|provinces|city-boundary`、`/api/poi/*`、`/api/map/status|selftest`、`/api/config`
-- 只有 WebServiceAPI Key 也能完整使用：底图自动降级为自建矢量底图（同一套 Web Mercator 投影，
-  拖拽/缩放/比例尺/指北针齐全）；没有 Key 时通勤时长降级为直线估算并标注「估算」。
-  排障可强制走降级底图：`http://127.0.0.1:8000/?map=canvas`
-
-## 语音（TTS / ASR）
-
-数字人的声音可以独立配置，不影响对话模型：
-
-```ini
-TTS_BASE_URL=https://api.siliconflow.cn/v1          # 或 https://api.openai.com/v1
-TTS_API_KEY=sk-...
-TTS_MODEL=FunAudioLLM/CosyVoice2-0.5B               # OpenAI 用 tts-1
-TTS_VOICE=FunAudioLLM/CosyVoice2-0.5B:claire        # 女声；男声 alex/benjamin/charles
-ASR_BASE_URL=https://api.siliconflow.cn/v1          # 按住说话
-ASR_API_KEY=sk-...
-ASR_MODEL=FunAudioLLM/SenseVoiceSmall
-```
-
-- 自检：`python tools/check_voice.py`（分别实测语音合成与识别，并给出修复方法）
-- 试听挑音色：`python tools/tts_voice_samples.py`（8 个内置音色各生成一段样例，并用基频判断男女声）
-- 相同文本的语音会缓存到 `data/tts_cache/`，重复播报不再消耗额度
-- 云端不可用时自动退回浏览器语音；若系统没有中文音色，会提示而不是用英文音色硬读中文
-
-## 抄作业：攻略链接一键导入
-
-「我的攻略 → 导入攻略（抄作业）」支持三条入口：**粘贴链接 / 粘贴正文 / 上传截图**。
-解析出「一城一天」的计划块后，走三步向导：预览勾选 → 真实地图上确认待定位点 → 生成计划块与草稿攻略，
-之后每个计划块都能点开进真实地图编辑、拖拽调序、LKH 重优化。
-
-- 链接抓取：服务端 httpx + 正则正文提取（不新增依赖）；小红书/抖音这类要登录的站点会直接提示改用粘贴正文或截图。
-- 解析引擎：配了 `OPENAI_API_KEY` 用大模型（文本 + 截图都支持），没有就走规则解析（Day/时间桶/分隔符 + 腾讯 POI 定位），
-  模型返回非法 JSON 会自动降到规则解析并标注。
-- 定位置信度低的点标为「待定位」，保留名称与序号，在向导地图或流程编辑器里点一下地图即可落位；
-  还有待定位点时「重新优化」会明确提示，不会拿到错的结果。
-- 原始正文与解析结果存 `data/imports/`（不进 git），可换引擎重新解析，已确认的点位不会被覆盖。
-
-## 数字人（Live2D，迁移自 Fay）
-
-视觉上整体改了一版：城市标签做成「描点 + 引线 + 名牌」钉在地面上，位置整数对齐、落位粘性（不会因为
-相机轻动就在槽位之间跳），同屏标签按优先级占位——全国视野约 16 座、缩进到省级再放开该省城市，
-两层标签共用同一套防重叠网格；**打开城市看 3D 地标时，所有地名自动收起**，视角压得很低时也收起，
-看完回到沙盘再淡回来。界面统一为「宣纸 + 墨 + 赭金」的东方质感（`frontend/css/theme.css`）。
-
-数字人不只在沙盘上：**进入流程编辑或「我的攻略」后，它会跟着进到面板里**，
-左下角多出一个「问数字人」小面板，可以打字或按住说话提问，回答会朗读并留在面板里；
-没收录讲解资料的城市也能问（会按城市名回答并说明资料有限）。
-
-数字人采用 **Fay 风格的驱动约定**：服务端只说通用动作语义，前端用 Live2D 渲染，
-口型由音频包络实时驱动。迁移自 Fay 的《Live2D模型制作要求》与《标准动作改造说明》。
-
-项目里已内置官方示例模型 **Hiyori**（开箱即用，口型已实测可动）。换模型的 3 步：
-
-1. 把 Cubism 5 导出的整个目录放进 `frontend/assets/live2d/model/`（含 .moc3 与贴图）
-2. 在 `frontend/assets/live2d/config.json` 里把 `model` 指向 `model/你的模型.model3.json`
-3. 校验：`python tools/check_live2d_model.py`
-
-换官方示例模型一条命令搞定：`python tools/fetch_live2d_sample.py --name Haru`。
-**模型从哪来、怎么自制/委托、授权怎么算**，见
-**[docs/Cubism5资源获取指南.md](docs/Cubism5资源获取指南.md)**。
-
-详细配置项（缩放/锚点、口型参数、Idle 与 TapBody 动作组、动作语义映射、夜间调光）
-与常见问题见 **[docs/数字人（Live2D）接入说明.md](docs/数字人（Live2D）接入说明.md)**。
-
-Live2D 运行时（PixiJS / Cubism Core / pixi-live2d-display）已在 `frontend/vendor/live2d/`，
-缺失时可用 `python tools/vendor_live2d.py` 重新抓取。
+第三方组件与许可见 [THIRD_PARTY_LICENSES.md](THIRD_PARTY_LICENSES.md) 与 `licenses/`；
+Live2D 运行时与示例模型的授权说明见 [docs/Cubism5资源获取指南](docs/Cubism5资源获取指南.md)。

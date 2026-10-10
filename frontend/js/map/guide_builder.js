@@ -31,7 +31,7 @@ function minutesText(minutes) {
   return hours ? `${hours} 小时 ${rest} 分钟` : `${rest} 分钟`;
 }
 
-export function createGuideBuilder({ onSpeak } = {}) {
+export function createGuideBuilder({ onSpeak, onPlay } = {}) {
   const state = { guides: [], guide: null, flows: [], toastTimer: null };
   const root = $('guide');
 
@@ -275,6 +275,13 @@ export function createGuideBuilder({ onSpeak } = {}) {
       if (event.target.value) openGuide(event.target.value);
     });
     $('guide-save')?.addEventListener('click', () => saveGuide('已重新计算里程与时长'));
+    $('guide-play')?.addEventListener('click', () => {
+      if (!state.guide?.id) {
+        toast('先选一份攻略，或从流程库加入几天', true);
+        return;
+      }
+      onPlay?.(state.guide.id);
+    });
     $('guide-export')?.addEventListener('click', exportGuide);
     $('guide-share')?.addEventListener('click', () => share().catch((error) => toast(error.message, true)));
     $('guide-delete')?.addEventListener('click', async () => {

@@ -23,7 +23,12 @@ from selenium.webdriver.firefox.service import Service
 BASE = "http://127.0.0.1:8000"
 ROOT = Path(__file__).resolve().parents[1]
 OUT = ROOT / "tests_artifacts"
-GECKODRIVER = "/snap/bin/geckodriver"
+# 本机是 snap 版 Firefox：优先用 snap 内的 geckodriver / 浏览器二进制（/snap/bin 的包装脚本在无会话时起不来）
+GECKODRIVER = "/snap/firefox/current/usr/lib/firefox/geckodriver"
+FIREFOX_BINARY = "/snap/firefox/current/usr/lib/firefox/firefox"
+if not Path(GECKODRIVER).exists():
+    GECKODRIVER = "/snap/bin/geckodriver"
+    FIREFOX_BINARY = ""
 
 # 允许出现的噪音（合成 PointerEvent 与自适应画质在软件渲染下的告警）
 NOISE = (
@@ -111,8 +116,17 @@ def geo_distance(a: dict, b: dict) -> float:
 
 
 def api_get(path: str) -> dict:
-    with urllib.request.urlopen(f"{BASE}{path}", timeout=15) as response:  # noqa: S310
-        return json.loads(response.read().decode("utf-8"))
+    # 服务刚起或被长任务占住时可能短暂超时：重试几次再放弃，
+    # 否则启动快照读不到会导致收尾时"为避免误删而跳过清理"。
+    last_error: Exception | None = None
+    for _ in range(3):
+        try:
+            with urllib.request.urlopen(f"{BASE}{path}", timeout=20) as response:  # noqa: S310
+                return json.loads(response.read().decode("utf-8"))
+        except Exception as error:  # noqa: BLE001
+            last_error = error
+            time.sleep(1.5)
+    raise RuntimeError(f"读取 {path} 失败：{last_error}")
 
 
 def api_delete(path: str) -> int | None:
@@ -130,6 +144,8 @@ def main() -> int:
     options.add_argument("-headless")
     options.add_argument("--width=1500")
     options.add_argument("--height=950")
+    if FIREFOX_BINARY:
+        options.binary_location = FIREFOX_BINARY
     driver = webdriver.Firefox(options=options, service=Service(executable_path=GECKODRIVER))
     failures: list[str] = []
     created_flow_ids: set[str] = set()
@@ -140,7 +156,9 @@ def main() -> int:
         imports_before = {item["id"] for item in api_get("/api/imports")["imports"]}
     except Exception as error:  # noqa: BLE001
         print("无法读取初始数据（清理步骤会跳过）：", error)
-        flows_before, guides_before, imports_before = set(), set(), set()
+        # 用 None 表示"没读到"：空集合表示"确实一条都没有"，两者不能混为一谈，
+        # 否则从零开始时收尾永远跳过清理，验收流程会越堆越多。
+        flows_before = guides_before = imports_before = None
 
     def check(name: str, condition: bool, detail: str = "") -> None:
         mark = "PASS" if condition else "FAIL"
@@ -631,6 +649,47 @@ def main() -> int:
         )
         driver.save_screenshot(str(OUT / "14_flow_route.png"))
 
+        # ── 8a. 播放推演：城内地图推进 + 昼夜层 + 日志 ──
+        driver.execute_script("document.getElementById('planner-play').click(); return true;")
+        time.sleep(3)
+        playback = driver.execute_script("return window.__cl.playback();")
+        check(
+            "推演：可以在城内地图上开始播放",
+            bool(playback.get("active")) and playback.get("day") == 1,
+            f"day={playback.get('day')} clock={playback.get('clock')}",
+        )
+        check(
+            "推演：昼夜层已叠加到地图上",
+            bool(playback.get("hasNightLayer")),
+            f"nightLayer={playback.get('hasNightLayer')}",
+        )
+        first_clock = playback.get("clock")
+        first_traveler = playback.get("traveler") or {}
+        time.sleep(4)
+        later = driver.execute_script("return window.__cl.playback();")
+        check(
+            "推演：时钟与旅行者随播放推进",
+            later.get("clock") != first_clock or (later.get("traveler") or {}).get("lng") != first_traveler.get("lng"),
+            f"{first_clock} → {later.get('clock')} · 进度 {round((later.get('realProgress') or 0) * 100)}%",
+        )
+        entries = driver.execute_script("return document.querySelectorAll('.pb-entry').length")
+        check("推演：日志逐条刷出", entries >= 2, f"日志 {entries} 条")
+        check(
+            "推演：地图上有旅行者光点",
+            bool(driver.execute_script("return !!document.querySelector('.map-traveler')")),
+            "found .map-traveler",
+        )
+        driver.execute_script(
+            "const s = document.getElementById('playback-range'); s.value = '900'; s.dispatchEvent(new Event('input', { bubbles: true })); return true;"
+        )
+        time.sleep(1.5)
+        seeked = driver.execute_script("return window.__cl.playback();")
+        check("推演：拖动进度条可跳站", (seeked.get("realProgress") or 0) > 0.6, f"进度 {round((seeked.get('realProgress') or 0) * 100)}%")
+        driver.execute_script("document.getElementById('playback-exit').click(); return true;")
+        time.sleep(1)
+        stopped = driver.execute_script("return window.__cl.playback();")
+        check("推演：退出后恢复编辑界面与实时时钟", not stopped.get("active"), f"active={stopped.get('active')}")
+
         # ── 6. 另存副本 ──
         count_before = driver.execute_script("return fetch('/api/flows').then((r) => r.json()).then((p) => p.count)")
         driver.execute_script("document.getElementById('planner-copy').click(); return true;")
@@ -741,12 +800,47 @@ def main() -> int:
         left = driver.execute_script("return document.querySelectorAll('.import-pending-item').length")
         check("抄作业：待定位点可在地图上落位", left == step3["pending"] - 1, f"{step3['pending']} → {left}")
         driver.execute_script("document.getElementById('import-commit').click(); return true;")
-        for _ in range(60):
+        # 提交后要等攻略面板真的把新草稿的块渲染出来（面板可能已经开着，不能只看 open 标志）
+        blocks = 0
+        commit_deadline = time.time() + 40
+        while time.time() < commit_deadline:
             time.sleep(0.5)
-            if driver.execute_script("return window.__cl.guide().open"):
+            blocks = driver.execute_script("return document.querySelectorAll('#guide-items .guide-item').length")
+            if blocks >= 2:
                 break
-        blocks = driver.execute_script("return document.querySelectorAll('#guide-items .guide-item').length")
         check("抄作业：生成计划块并写入攻略", blocks >= 2, f"攻略里 {blocks} 个块")
+
+        # ── 8c. 整份攻略连续推演（含城际/过夜过渡卡）──
+        driver.execute_script("document.getElementById('guide-play').click(); return true;")
+        time.sleep(5)
+        guide_play = driver.execute_script("return window.__cl.playback();")
+        check(
+            "推演：整份攻略可连续播放",
+            bool(guide_play.get("active")) and (guide_play.get("day") or 0) >= 1,
+            f"day={guide_play.get('day')} kind={guide_play.get('kind')}",
+        )
+        card_seen = False
+        day_advanced = False
+        for _ in range(24):
+            time.sleep(1)
+            state = driver.execute_script(
+                "return { pb: window.__cl.playback(), card: !document.getElementById('playback-card').classList.contains('hidden'), text: document.getElementById('playback-card').textContent || '' };"
+            )
+            if state["card"] and ("前往" in state["text"] or "夜间休整" in state["text"]):
+                card_seen = True
+                break
+            if (state["pb"].get("day") or 1) >= 2:
+                day_advanced = True
+                break
+            if not state["pb"].get("active"):
+                break
+        check(
+            "推演：多天可以连续推进（过渡卡或进入第 2 天）",
+            card_seen or day_advanced,
+            "过渡卡" if card_seen else ("已进入第 2 天" if day_advanced else "未推进"),
+        )
+        driver.execute_script("window.__cl.playbackStop(); return true;")
+        time.sleep(1)
 
         # ── 9. 降级路径：无 JS Key 时的自建矢量底图也要能拖拽/缩放/选中 ──
         driver.get(f"{BASE}/?map=canvas")
@@ -827,7 +921,7 @@ def main() -> int:
         # 清理本次验收创建的数据（只删本次新增且属于验收城市的流程）
         try:
             removed_flows = 0
-            if not flows_before:
+            if flows_before is None:
                 print("清理跳过：启动时没能读到流程清单，为避免误删用户数据不做任何删除")
             else:
                 # 只删「启动时不存在的流程」——也就是本次验收新建的（含双击时自动建的空流程）；
@@ -841,15 +935,17 @@ def main() -> int:
                         removed_flows += 1
                         print(f"  删除验收流程：{item.get('name')}（{item.get('city')}）")
             removed_guides = 0
-            for item in api_get("/api/guides")["guides"]:
-                if item["id"] not in guides_before:
-                    if api_delete(f"/api/guides/{item['id']}"):
-                        removed_guides += 1
+            if guides_before is not None:
+                for item in api_get("/api/guides")["guides"]:
+                    if item["id"] not in guides_before:
+                        if api_delete(f"/api/guides/{item['id']}"):
+                            removed_guides += 1
             removed_imports = 0
-            for item in api_get("/api/imports")["imports"]:
-                if item["id"] not in imports_before:
-                    if api_delete(f"/api/imports/{item['id']}"):
-                        removed_imports += 1
+            if imports_before is not None:
+                for item in api_get("/api/imports")["imports"]:
+                    if item["id"] not in imports_before:
+                        if api_delete(f"/api/imports/{item['id']}"):
+                            removed_imports += 1
             print(f"已清理验收数据：流程 {removed_flows} 条 · 攻略 {removed_guides} 份 · 导入 {removed_imports} 条")
         except Exception as error:  # noqa: BLE001
             print("验收数据清理失败（可手动删除 data/flows、data/guides 里的测试数据）：", error)

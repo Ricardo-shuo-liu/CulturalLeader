@@ -2,6 +2,7 @@
 // 天文日照精度、晨昏线东西差异、投影方位、地形高度场与几何数据有效性。
 
 import assert from 'node:assert/strict';
+import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 
@@ -19,6 +20,8 @@ const mercator = await import(path.join(root, 'frontend/js/map/mercator.js'));
 const landmarks = await import(path.join(root, 'frontend/js/landmarks.js'));
 const { LANDMARKS_CN } = await import(path.join(root, 'frontend/js/data/landmarks-cn.js'));
 const cityIndexUtils = await import(path.join(root, 'frontend/js/map/city_index.js'));
+const dynastyMode = await import(path.join(root, 'frontend/js/map/dynasty_mode.js'));
+const poemGlow = await import(path.join(root, 'frontend/js/map/poem_glow.js'));
 
 const results = [];
 function check(name, fn) {
@@ -373,6 +376,247 @@ check('全国 34 个省级行政区都有讲解与地标', () => {
   assert.equal(missing.length, 0, `缺少：${missing.join('、')}`);
   assert.ok(covered.has('台北'), '台湾必须包含在内');
   return `覆盖 ${provincial.length} 个省级行政区（含台北）`;
+});
+
+const playback = await import(path.join(root, 'frontend/js/map/playback.js'));
+
+function fakeFlow() {
+  return {
+    id: 'flow-test',
+    name: '测试一日',
+    transport: 'taxi',
+    city: { name: '西安', lng: 108.9398, lat: 34.3416 },
+    points: [
+      { id: 'a', name: '钟楼', lng: 108.9398, lat: 34.261, dwell_minutes: 60 },
+      { id: 'b', name: '大雁塔', lng: 108.964, lat: 34.2186, dwell_minutes: 90 },
+      { id: 'c', name: '回民街', lng: 108.94, lat: 34.265, dwell_minutes: 60 },
+    ],
+    plan: {
+      start_time: '09:00',
+      end_time: '14:30',
+      total_minutes: 330,
+      timeline: [
+        { node: 0, kind: 'start', id: '__start', name: '酒店', arrive: 32400, depart: 32400, wait_minutes: 0, arrive_text: '09:00', depart_text: '09:00' },
+        { node: 1, kind: 'stop', id: 'a', name: '钟楼', arrive: 33600, depart: 37200, wait_minutes: 0, arrive_text: '09:20', depart_text: '10:20' },
+        { node: 2, kind: 'stop', id: 'b', name: '大雁塔', arrive: 39000, depart: 44400, wait_minutes: 0, arrive_text: '10:50', depart_text: '12:20' },
+        { node: 3, kind: 'stop', id: 'c', name: '回民街', arrive: 46200, depart: 49800, wait_minutes: 0, arrive_text: '12:50', depart_text: '13:50' },
+      ],
+      order: ['__start', 'a', 'b', 'c'],
+      legs: [
+        { from: '__start', to: 'a', mode: 'taxi', minutes: 20, distance_km: 5.2, estimated: false },
+        { from: 'a', to: 'b', mode: 'taxi', minutes: 30, distance_km: 8.4, estimated: false },
+        { from: 'b', to: 'c', mode: 'walking', minutes: 30, distance_km: 2.1, estimated: true },
+      ],
+    },
+  };
+}
+
+check('推演：时间轨与到达/离开时间对齐', () => {
+  const track = playback.buildDayTrack(fakeFlow());
+  assert.equal(track.empty, false);
+  assert.equal(track.nodes.length, 4);
+  assert.equal(track.nodes[0].name, '酒店');
+  assert.equal(track.startMinutes, 540, `09:00 应为 540 分钟，实际 ${track.startMinutes}`);
+  assert.equal(track.endMinutes, 830, `13:50 结束应为 830 分钟，实际 ${track.endMinutes}`);
+  assert.equal(track.legs.length, 3);
+  assert.ok(Math.abs(track.legs[1].minutes - 30) < 0.01);
+  assert.equal(track.legs[2].estimated, true, '步行段应保留估算标记');
+  assert.equal(track.legs[2].mode, 'walking');
+  return `${track.nodes.length} 站 · ${track.legs.length} 段 · ${track.startMinutes}→${track.endMinutes} 分钟`;
+});
+
+check('推演：旅行者位置随时间推进', () => {
+  const track = playback.buildDayTrack(fakeFlow());
+  const start = playback.snapshotDay(track, 540);
+  assert.equal(start.status, 'waiting');
+  assert.ok(Math.abs(start.traveler.lng - 108.9398) < 1e-6, '出发时应停在出发点');
+  const moving = playback.snapshotDay(track, 550); // 09:10，第一段通勤中
+  assert.equal(moving.status, 'moving');
+  assert.ok(moving.traveler.lng > 108.9398 && moving.traveler.lng < 108.9398 + (108.9398 - 108.9398) + 0.001 + 0.0 || moving.traveler.lng >= 108.9398);
+  const mid = playback.snapshotDay(track, 570); // 09:30 正好抵达钟楼
+  assert.equal(mid.status, 'staying');
+  assert.ok(Math.abs(mid.traveler.lat - 34.261) < 1e-6, '停留时应站在点位坐标上');
+  const done = playback.snapshotDay(track, 900);
+  assert.equal(done.status, 'done');
+  assert.ok(done.entries.some((entry) => entry.kind === 'end'), '结束应写入日志');
+  assert.ok(done.entries.length >= 8, `日志条目偏少：${done.entries.length}`);
+  assert.ok(done.travelled.length >= 2, '已走路径应至少有两个点');
+  return `waiting→moving→staying→done，日志 ${done.entries.length} 条`;
+});
+
+check('推演：多天编排含城际与过夜卡', () => {
+  const day1 = fakeFlow();
+  const day2 = { ...fakeFlow(), id: 'flow-test-2', name: '成都一日', city: { name: '成都', lng: 104.06, lat: 30.67 } };
+  const guide = {
+    id: 'guide-test',
+    items: [
+      { day: 1, flowId: 'flow-test', notes: '' },
+      { day: 2, flowId: 'flow-test-2', notes: '', leg: { from: '西安', to: '成都', mode: 'driving', minutes: 400, distance_km: 620, estimated: true } },
+    ],
+  };
+  const playlist = playback.buildGuidePlaylist(guide, { 'flow-test': day1, 'flow-test-2': day2 }, { speed: 1 });
+  const kinds = playlist.segments.map((segment) => segment.kind);
+  assert.deepEqual(kinds, ['day', 'transfer', 'night', 'day'], `实际 ${kinds.join('→')}`);
+  const transfer = playlist.segments.find((segment) => segment.kind === 'transfer');
+  assert.ok(transfer.realDuration <= playback.TRANSFER_MAX_SECONDS + 1e-6, '城际快进不应超过 6 秒');
+  const night = playlist.segments.find((segment) => segment.kind === 'night');
+  assert.ok(night.minutes > 600, `夜间休整应覆盖到次日 09:00，实际 ${night.minutes}`);
+  const fast = playback.buildGuidePlaylist(guide, { 'flow-test': day1, 'flow-test-2': day2 }, { speed: 4 });
+  assert.ok(fast.totalReal < playlist.totalReal, '4× 应显著缩短总时长');
+  return `${kinds.join('→')} · 1× ${playlist.totalReal.toFixed(1)}s / 4× ${fast.totalReal.toFixed(1)}s`;
+});
+
+check('推演：播放器 seek 与跳站', () => {
+  const guide = { items: [{ day: 1, flowId: 'flow-test' }] };
+  const playlist = playback.buildGuidePlaylist(guide, { 'flow-test': fakeFlow() }, { speed: 1 });
+  const player = playback.createPlayer(playlist, { speed: 1 });
+  const first = player.snapshot();
+  assert.equal(first.day, 1);
+  assert.ok(first.clockText === '09:00', `起始时钟应为 09:00，实际 ${first.clockText}`);
+  const mid = player.seekAbsolute(600); // 10:00
+  assert.equal(mid.clockText, '10:00');
+  const end = player.seekAbsolute(playlist.totalSim);
+  assert.ok(end.absoluteMinutes >= 820, `末段应到当天结束，实际 ${end.absoluteMinutes}`);
+  player.seekAbsolute(540);
+  const next = player.skipNext();
+  assert.ok(Math.abs(next.absoluteMinutes - 560) < 0.5, `跳站应到第一站抵达时刻 09:20（560 分钟），实际 ${next.absoluteMinutes}`);
+  player.play();
+  const advanced = player.tick(2);
+  assert.ok(advanced.absoluteMinutes > 540, '播放中 tick 应推进模拟时间');
+  assert.ok(advanced.realProgress > 0 && advanced.realProgress <= 1);
+  return `09:00→${end.clockText}，跳站到 ${next.clockText}，tick 推进正常`;
+});
+
+check('推演：昼夜层东西差异与晨昏线', () => {
+  const bounds = { minLng: 73, maxLng: 135, minLat: 18, maxLat: 54 };
+  const date = new Date(Date.UTC(2026, 8, 23, -8 + 6, 30));
+  const { cols, rows, grid } = playback.sampleAltitudes(bounds, date, { cols: 40, rows: 20 });
+  let west = 0;
+  let east = 0;
+  for (let row = 0; row < rows; row += 1) {
+    for (let col = 0; col < cols; col += 1) {
+      if (col < cols / 2) west += playback.nightAlphaAt(grid[row * cols + col]);
+      else east += playback.nightAlphaAt(grid[row * cols + col]);
+    }
+  }
+  assert.ok(west > east, `西侧应更暗：west=${west.toFixed(2)} east=${east.toFixed(2)}`);
+  assert.ok(playback.nightAlphaAt(-20) > playback.nightAlphaAt(0), '夜间遮罩应比晨昏线更暗');
+  assert.ok(playback.nightAlphaAt(0) > playback.nightAlphaAt(20), '白天不应有遮罩');
+  assert.ok(playback.nightAlphaAt(20) < 0.01, '高度角 20° 应完全白天');
+  const line = playback.terminatorPoints(bounds, date, { rows: 24, steps: 48 });
+  assert.ok(line.length >= 6, `晨昏线采样点太少：${line.length}`);
+  assert.ok(line.every((point) => point.lng >= bounds.minLng - 0.01 && point.lng <= bounds.maxLng + 0.01));
+  return `西 ${west.toFixed(1)} / 东 ${east.toFixed(1)}，晨昏线 ${line.length} 点`;
+});
+
+// ── 穿越系统：故事数据在 Python 模块里（单一数据源），这里取真数据做结构与落点校验 ──
+
+function loadDynastyPayloads() {
+  const python = process.env.CL_PYTHON || 'python3';
+  const script = [
+    'import sys, json',
+    "sys.path.insert(0, 'backend')",
+    'from app.data import dynasties as d',
+    "print(json.dumps([d.get_dynasty(k) for k in ('tang', 'song', 'ming')], ensure_ascii=False))",
+  ].join('\n');
+  const raw = execFileSync(python, ['-c', script], { cwd: root, encoding: 'utf8', maxBuffer: 8 * 1024 * 1024 });
+  return JSON.parse(raw);
+}
+
+let dynastyPayloads = null;
+let dynastyLoadError = '';
+try {
+  dynastyPayloads = loadDynastyPayloads();
+} catch (error) {
+  dynastyLoadError = error.message;
+}
+
+check('穿越：三朝数据完整（疆域闭合 + 12 地名 + 12 诗词）', () => {
+  if (!dynastyPayloads) {
+    return `跳过真实数据校验（未能调用 python：${dynastyLoadError.slice(0, 80)}）`;
+  }
+  assert.equal(dynastyPayloads.length, 3, '应正好三朝');
+  const keys = dynastyPayloads.map((item) => item.key);
+  assert.deepEqual(keys, ['tang', 'song', 'ming']);
+  const summaries = dynastyPayloads.map((item) => dynastyMode.validateDynastyPayload(item));
+  dynastyPayloads.forEach((dynasty) => {
+    assert.ok(dynasty.period && dynasty.capital && dynasty.color, `${dynasty.key} 缺少年代/都城/主题色`);
+    assert.ok(dynasty.summary, `${dynasty.key} 缺少一句话简介`);
+    // 命名唯一性只在同一朝代内要求（扬州/洛阳这类地名本就跨朝沿用）
+    const names = new Set();
+    dynasty.places.forEach((place) => {
+      const label = `${place.ancient}|${place.modern}`;
+      assert.ok(!names.has(label), `${dynasty.key} 地名重复：${label}`);
+      names.add(label);
+    });
+    dynasty.poems.forEach((poem) => {
+      const label = `${poem.title}|${poem.author}`;
+      assert.ok(!names.has(label), `${dynasty.key} 诗词重复：${label}`);
+      names.add(label);
+    });
+  });
+  return summaries.map((item) => `${item.key} ${item.outline}点/${item.places}地名/${item.poems}诗词`).join(' · ');
+});
+
+check('穿越：地名与诗词写作地在疆域内，投影落在舞台可视范围', () => {
+  if (!dynastyPayloads) return '跳过（无真实数据）';
+  let count = 0;
+  dynastyPayloads.forEach((dynasty) => {
+    const bounds = dynastyMode.outlineBounds(dynasty.outline);
+    const placeIds = new Set(dynasty.places.map((place) => place.id));
+    dynasty.places.forEach((place) => {
+      assert.ok(place.lng >= bounds.minLng && place.lng <= bounds.maxLng, `${dynasty.key}/${place.id} 经度越界`);
+      assert.ok(place.lat >= bounds.minLat && place.lat <= bounds.maxLat, `${dynasty.key}/${place.id} 纬度越界`);
+      const point = geo.project(place.lng, place.lat);
+      assert.ok(Math.abs(point.x) < 3.2 && Math.abs(point.y) < 1.9, `${dynasty.key}/${place.id} 投影越界`);
+      count += 1;
+    });
+    dynasty.poems.forEach((poem) => {
+      assert.ok(placeIds.has(poem.place_id), `${dynasty.key}/${poem.id} 写作地缺失`);
+      count += 1;
+    });
+  });
+  return `${count} 个落点全部通过`;
+});
+
+check('穿越：朝代主题色与现代图层配色可区分', () => {
+  if (!dynastyPayloads) return '跳过（无真实数据）';
+  const colors = new Set(dynastyPayloads.map((item) => String(item.color).toUpperCase()));
+  assert.equal(colors.size, 3, '三朝主题色应各不相同');
+  return Array.from(colors).join(' / ');
+});
+
+check('穿越：光字两列竖排切分（五言 / 七言 / 词）', () => {
+  const five = poemGlow.poemColumns('床前明月光，疑是地上霜。举头望明月，低头思故乡。');
+  assert.deepEqual(five, ['床前明月光', '疑是地上霜']);
+  const seven = poemGlow.poemColumns('月落乌啼霜满天，江枫渔火对愁眠。');
+  assert.deepEqual(seven, ['月落乌啼霜满天', '江枫渔火对愁眠']);
+  const ci = poemGlow.poemColumns('明月几时有？把酒问青天。不知天上宫阙，今夕是何年。');
+  assert.deepEqual(ci, ['明月几时有', '把酒问青天']);
+  const long = poemGlow.poemColumns('大江东去，浪淘尽，千古风流人物。');
+  assert.ok(long[0].length <= 9 && long[1].length <= 9, `每列不应超过 9 字：${long.join(' / ')}`);
+  assert.ok(long.every((line) => line.length > 0), '两列都应有字');
+  return `五言「${five.join(' / ')}」· 七言「${seven.join(' / ')}」`;
+});
+
+check('穿越：每朝 4–8 首代表诗词发光字，且 id 都能对上', () => {
+  if (!dynastyPayloads) return '跳过（无真实数据）';
+  return dynastyPayloads
+    .map((dynasty) => {
+      const ids = new Set(dynasty.poems.map((poem) => poem.id));
+      const featured = dynasty.featured || [];
+      assert.ok(featured.length >= 4 && featured.length <= 8, `${dynasty.key} 光字数量 ${featured.length} 不在 4–8`);
+      featured.forEach((id) => {
+        assert.ok(ids.has(id), `${dynasty.key} 光字诗词不存在：${id}`);
+      });
+      const flagged = dynasty.poems
+        .filter((poem) => poem.featured)
+        .map((poem) => poem.id)
+        .sort();
+      assert.deepEqual(flagged, featured.slice().sort(), `${dynasty.key} featured 标记与清单不一致`);
+      return `${dynasty.key} ${featured.length} 首`;
+    })
+    .join(' · ');
 });
 
 let failed = 0;

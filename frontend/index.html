@@ -21,6 +21,13 @@
     <div id="vignette" aria-hidden="true"></div>
     <div id="labels" aria-hidden="true"></div>
 
+    <div id="dynasty-bar" class="hidden">
+      <span id="dynasty-bar-name">唐</span>
+      <span id="dynasty-bar-meta"></span>
+      <button id="dynasty-bar-exit" type="button">返回现代</button>
+    </div>
+    <div id="dynasty-tip" class="hidden" aria-hidden="true"></div>
+
 
 
     <div id="live2d-stage">
@@ -82,6 +89,17 @@
       <button id="city-card-enter" type="button" class="primary">进入流程编辑</button>
     </div>
 
+    <aside id="dynasty-card" class="glass hidden">
+      <header>
+        <div>
+          <strong id="dc-title">地名</strong>
+          <div id="dc-sub" class="muted"></div>
+        </div>
+        <button id="dc-close" type="button">✕</button>
+      </header>
+      <div id="dc-body"></div>
+    </aside>
+
     <div id="planner" class="hidden">
       <header class="planner-head">
         <button id="planner-back" type="button">← 返回沙盘</button>
@@ -93,6 +111,7 @@
         <button id="planner-copy" type="button">另存副本</button>
         <button id="planner-export" type="button">导出</button>
         <button id="planner-import" type="button">导入</button>
+        <button id="planner-play" type="button" class="primary">▶ 播放这一天</button>
         <button id="planner-delete" type="button">删除</button>
       </header>
       <div class="planner-hint">
@@ -142,7 +161,6 @@
             <button id="planner-search-btn" type="button">搜索</button>
             <span id="planner-mapkind" class="muted"></span>
             <span class="planner-map-tip">点地图任意位置即可加点</span>
-            <span class="planner-map-tip">点地图任意位置即可加点</span>
             <button id="planner-selftest" type="button">环境自检</button>
           </div>
           <div id="planner-buckets" class="planner-buckets"></div>
@@ -150,6 +168,29 @@
           <div id="planner-detail" class="planner-detail"></div>
         </main>
       </div>
+      <div id="playback-bar" class="hidden">
+        <button id="playback-toggle" type="button" title="播放/暂停">▶</button>
+        <div id="playback-speeds" class="seg">
+          <button type="button" data-speed="1" class="active">1×</button>
+          <button type="button" data-speed="2">2×</button>
+          <button type="button" data-speed="4">4×</button>
+          <button type="button" data-speed="8">8×</button>
+        </div>
+        <input id="playback-range" type="range" min="0" max="1000" value="0" />
+        <span id="playback-clock">—</span>
+        <button id="playback-prev" type="button">上一站</button>
+        <button id="playback-next" type="button">下一站</button>
+        <label class="pb-check"><input id="playback-follow" type="checkbox" checked /> 跟随</label>
+        <label class="pb-check"><input id="playback-narrate" type="checkbox" /> 播报</label>
+        <label class="pb-check"><input id="playback-keep" type="checkbox" /> 保持时刻</label>
+        <button id="playback-exit" type="button">退出推演</button>
+      </div>
+      <aside id="playback-log" class="hidden">
+        <header>推演日志</header>
+        <div id="playback-log-list"></div>
+      </aside>
+      <div id="playback-card" class="hidden"></div>
+
       <div id="planner-chat" class="planner-chat glass">
         <header class="pc-head">
           <strong>问数字人</strong>
@@ -174,6 +215,7 @@
         <select id="guide-select" title="切换攻略"></select>
         <button id="guide-new" type="button">新建</button>
         <button id="guide-import" type="button">导入攻略（抄作业）</button>
+        <button id="guide-play" type="button" class="primary">▶ 播放整份攻略</button>
         <button id="guide-save" type="button">重新计算</button>
         <button id="guide-export" type="button">导出 JSON</button>
         <button id="guide-share" type="button">分享链接</button>
@@ -283,6 +325,23 @@
         <p class="drawer-note" id="city-zoom-note">
           全国视野只显示重点城市；<b>缩进到省级范围会自动显示该省的城市</b>，不需要手动切换。
         </p>
+      </section>
+
+      <section class="drawer-section">
+        <h4>穿越</h4>
+        <label class="drawer-label" for="dynasty-select">选择朝代</label>
+        <select id="dynasty-select">
+          <option value="tang">唐 · 618–907 · 长安</option>
+          <option value="song">宋 · 960–1279 · 东京开封府</option>
+          <option value="ming">明 · 1368–1644 · 应天府</option>
+        </select>
+        <button id="dynasty-enter" class="drawer-btn primary" type="button">开始穿越</button>
+        <button id="dynasty-exit" class="drawer-btn" type="button">返回现代</button>
+        <p class="drawer-note" id="dynasty-note">
+          选择朝代后「开始穿越」：底图整体换成该朝示意疆域，现代地名与地标全部收起。
+        </p>
+        <div class="drawer-label">本朝诗词（点一首飞到写作地）</div>
+        <div id="dynasty-poems" class="dynasty-poems"></div>
       </section>
 
       <section class="drawer-section">

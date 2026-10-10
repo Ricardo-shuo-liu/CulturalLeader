@@ -3,6 +3,14 @@
 
 import { createMapView, loadTencentMap } from './tmap_view.js';
 import { bucketForHour, insertIndexForDrop } from './trip_utils.js';
+import {
+  BASE_MINUTES_PER_SECOND,
+  SPEED_OPTIONS,
+  buildDayTrack,
+  buildGuidePlaylist,
+  clockText,
+  createPlayer,
+} from './playback.js';
 
 const BUCKETS = [
   ['breakfast', '早餐'],
@@ -40,7 +48,7 @@ async function api(path, options = {}) {
   return payload;
 }
 
-export function createFlowEditor({ onSpeak, onCityChange, resolveSlug } = {}) {
+export function createFlowEditor({ onSpeak, onCityChange, resolveSlug, onSceneTime, onSceneLive } = {}) {
   const state = {
     flows: [],
     flow: null,
@@ -53,6 +61,17 @@ export function createFlowEditor({ onSpeak, onCityChange, resolveSlug } = {}) {
     map: null,
     mapTried: false,
     toastTimer: null,
+    // 推演
+    playback: null,
+    playbackMode: false,
+    playbackFlowId: null,
+    playbackRaf: 0,
+    playbackClock: 0,
+    follow: true,
+    narrate: false,
+    loggedEntries: 0,
+    narratedIndex: -1,
+    sourceGuideId: null,
   };
 
   const root = $('planner');
@@ -898,13 +917,309 @@ export function createFlowEditor({ onSpeak, onCityChange, resolveSlug } = {}) {
     document.body.classList.remove('planner-open');
   }
 
+  // ───────────────────────── 播放推演 ─────────────────────────
+
+  function playbackUi(show) {
+    state.playbackMode = Boolean(show);
+    document.body.classList.toggle('playback-open', Boolean(show));
+    $('playback-bar')?.classList.toggle('hidden', !show);
+    $('playback-log')?.classList.toggle('hidden', !show);
+    $('planner-poi')?.classList.toggle('hidden', Boolean(show));
+    $('planner-buckets')?.classList.toggle('hidden', Boolean(show));
+    if (!show) {
+      $('playback-card')?.classList.add('hidden');
+      $('playback-log-list') && ($('playback-log-list').innerHTML = '');
+      state.loggedEntries = 0;
+      state.narratedIndex = -1;
+    }
+  }
+
+  function singleDayPlaylist(flow) {
+    const track = buildDayTrack(flow, { dayIndex: 1 });
+    if (track.empty) return null;
+    const real = track.durationMinutes / (BASE_MINUTES_PER_SECOND * Math.max(1, state.playbackSpeed || 1));
+    const segment = {
+      kind: 'day',
+      day: 1,
+      flowId: flow.id,
+      optimized: true,
+      startAbs: track.startMinutes,
+      endAbs: track.endMinutes,
+      simDuration: track.durationMinutes,
+      realDuration: real,
+      track,
+    };
+    return { segments: [segment], totalSim: track.endMinutes, totalReal: real };
+  }
+
+  async function ensurePlaybackFlow(flowId, cache = null) {
+    if (!flowId || state.playbackFlowId === flowId) return;
+    const flow = cache?.get(flowId) || (await api(`/api/flows/${flowId}`));
+    state.playbackFlowId = flowId;
+    state.flow = flow;
+    state.selected = null;
+    if ($('planner-name') && state.sourceGuideId) $('planner-name').value = flow.name || '';
+    renderPoints();
+    renderPlan();
+    if ($('planner-city')) $('planner-city').textContent = flow.city?.name ? `${flow.city.name}${flow.city.province ? ` · ${flow.city.province}` : ''}` : '';
+    const view = ensureMap();
+    view?.setPoints({ points: mapPoints(), color: '#f2c879', city: flow.city });
+  }
+
+  function renderPlaybackLog(entries, status) {
+    const list = $('playback-log-list');
+    if (!list) return;
+    if (entries.length < state.loggedEntries) {
+      list.innerHTML = '';
+      state.loggedEntries = 0;
+    }
+    entries.slice(state.loggedEntries).forEach((entry) => {
+      const row = document.createElement('div');
+      row.className = 'pb-entry';
+      row.dataset.kind = entry.kind;
+      row.innerHTML = `<span class="pb-time">${entry.time}</span><span class="pb-text">${entry.text}</span>`;
+      list.appendChild(row);
+    });
+    state.loggedEntries = entries.length;
+    list.querySelectorAll('.pb-entry').forEach((node, index) => {
+      node.classList.toggle('active', index === entries.length - 1);
+    });
+    if (status === 'moving') list.lastElementChild?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+    else list.lastElementChild?.scrollIntoView({ block: 'nearest' });
+  }
+
+  function showTransitionCard(snapshot) {
+    const card = $('playback-card');
+    if (!card) return;
+    const segment = snapshot.segment;
+    if (snapshot.kind !== 'transfer' && snapshot.kind !== 'night') {
+      card.classList.add('hidden');
+      return;
+    }
+    const title =
+      snapshot.kind === 'transfer'
+        ? `前往「${segment.to || '下一座城市'}」`
+        : `夜间休整 · 第 ${segment.day} 天结束`;
+    const detail =
+      snapshot.kind === 'transfer'
+        ? `${segment.from || '上一站'} → ${segment.to || ''} · ${segment.mode === 'transit' ? '公交' : '驾车'} ${Math.round(
+            segment.minutes,
+          )} 分钟 · ${segment.distance_km.toFixed(0)} km${segment.estimated ? '（估算）' : ''}`
+        : `${segment.minutes >= 60 ? `${Math.floor(segment.minutes / 60)} 小时 ${Math.round(segment.minutes % 60)} 分` : `${Math.round(segment.minutes)} 分钟`} · 明早 ${clockText(segment.endAbs)} 继续`;
+    card.innerHTML = `<div class="pb-card-title">${title}</div><div class="pb-card-detail">${detail}</div>
+      <div class="pb-card-clock">模拟时间 ${snapshot.clockText}${snapshot.kind === 'night' ? ' · 夜色中' : ''}</div>`;
+    card.classList.remove('hidden');
+  }
+
+  function applySnapshot(snapshot) {
+    if (!snapshot) return;
+    const view = ensureMap();
+    if (snapshot.kind === 'day' && snapshot.flowId) {
+      ensurePlaybackFlow(snapshot.flowId, state.playbackCache).then(() => {
+        view?.setPoints({ points: mapPoints(), color: '#f2c879', city: state.flow?.city });
+      });
+    }
+    view?.setTraveler(snapshot.traveler);
+    view?.setTravelled(snapshot.travelled);
+    view?.setNightLayer({ date: snapshot.date, enabled: true });
+    if (state.follow && snapshot.traveler) view?.centerOn(snapshot.traveler);
+    showTransitionCard(snapshot);
+    renderPlaybackLog(snapshot.entries || [], snapshot.status);
+    if ($('playback-clock')) $('playback-clock').textContent = `第 ${snapshot.day} 天 · ${snapshot.clockText}`;
+    const slider = $('playback-range');
+    if (slider && document.activeElement !== slider) {
+      slider.value = String(Math.round((snapshot.realProgress || 0) * 1000));
+    }
+    const playBtn = $('playback-toggle');
+    if (playBtn) playBtn.textContent = snapshot.playing ? '⏸' : '▶';
+    document.querySelectorAll('.planner-stop').forEach((node, index) => {
+      node.classList.toggle('done', index <= (snapshot.stopIndex ?? -1));
+    });
+    if (state.narrate && snapshot.kind === 'day') {
+      const arrivals = (snapshot.entries || []).filter((entry) => entry.kind === 'arrive');
+      if (arrivals.length > state.narratedIndex) {
+        state.narratedIndex = arrivals.length;
+        const latest = arrivals[arrivals.length - 1];
+        onSpeak?.(`${latest.time}，${latest.text.replace(/^抵达/, '已经抵达')}`);
+      }
+    }
+    onSceneTime?.(snapshot.date);
+  }
+
+  function playbackFrame(now) {
+    if (!state.playback || !state.playbackMode) return;
+    const delta = state.playbackClock ? Math.min(0.3, (now - state.playbackClock) / 1000) : 0;
+    state.playbackClock = now;
+    const snapshot = state.playback.tick(delta);
+    applySnapshot(snapshot);
+    state.playbackRaf = window.requestAnimationFrame(playbackFrame);
+  }
+
+  function startPlayback(playlist) {
+    stopPlayback({ silent: true });
+    state.playback = createPlayer(playlist, { speed: state.playbackSpeed || 1 });
+    state.playbackSpeed = state.playback.state.speed;
+    state.playback
+      .snapshot();
+    playbackUi(true);
+    state.playback.play();
+    state.playbackClock = 0;
+    state.playbackRaf = window.requestAnimationFrame(playbackFrame);
+  }
+
+  function stopPlayback({ silent = false } = {}) {
+    if (state.playbackRaf) window.cancelAnimationFrame(state.playbackRaf);
+    state.playbackRaf = 0;
+    state.playback = null;
+    state.playbackFlowId = null;
+    state.playbackClock = 0;
+    playbackUi(false);
+    const view = state.mapView;
+    view?.setTraveler(null);
+    view?.setTravelled([]);
+    view?.setNightLayer({ enabled: false });
+    if (!silent) {
+      const keep = $('playback-keep')?.checked;
+      if (!keep) onSceneLive?.();
+      toast(keep ? '已退出推演（保留当前时刻）' : '已退出推演，时间回到实时');
+    }
+  }
+
+  async function playDay() {
+    const flow = state.flow;
+    if (!flow) return;
+    if (!flow.plan || !(flow.plan.timeline || []).length) {
+      toast('这条流程还没优化，正在先优化…');
+      await optimize();
+      if (!state.flow?.plan?.timeline?.length) {
+        toast('优化没有成功，先检查点位与地图服务', true);
+        return;
+      }
+    }
+    const playlist = singleDayPlaylist(state.flow);
+    if (!playlist) {
+      toast('当天没有可推演的点位', true);
+      return;
+    }
+    state.sourceGuideId = null;
+    state.playbackCache = null;
+    startPlayback(playlist);
+    toast('开始推演：可拖动进度条跳站，随时暂停');
+  }
+
+  async function playGuide(guideId) {
+    try {
+      const guide = await api(`/api/guides/${guideId}`);
+      const cache = new Map();
+      const items = guide.items || [];
+      for (const item of items) {
+        if (!item.flowId || cache.has(item.flowId)) continue;
+        const flow = await api(`/api/flows/${item.flowId}`);
+        if (!flow.plan || !(flow.plan.timeline || []).length) {
+          toast(`第 ${item.day} 天还没优化，正在优化…`);
+          try {
+            const result = await api(`/api/flows/${flow.id}/optimize`, { method: 'POST', body: {} });
+            cache.set(flow.id, result.flow);
+            continue;
+          } catch (error) {
+            toast(`第 ${item.day} 天优化失败：${error.message}`, true);
+          }
+        }
+        cache.set(flow.id, flow);
+      }
+      const playlist = buildGuidePlaylist(guide, Object.fromEntries(cache), { speed: 1 });
+      if (!playlist.segments.length) {
+        toast('这份攻略还没有可推演的天数', true);
+        return;
+      }
+      state.sourceGuideId = guideId;
+      state.playbackCache = cache;
+      root.classList.remove('hidden');
+      document.body.classList.add('planner-open');
+      await ensurePlaybackFlow(playlist.segments[0].flowId, cache);
+      startPlayback(playlist);
+      toast(`开始连续推演：共 ${items.length} 天`);
+    } catch (error) {
+      toast(error.message, true);
+    }
+  }
+
+  function wirePlayback() {
+    $('planner-play')?.addEventListener('click', () => playDay());
+    $('playback-toggle')?.addEventListener('click', () => {
+      state.playback?.toggle();
+      applySnapshot(state.playback?.snapshot());
+    });
+    $('playback-exit')?.addEventListener('click', () => stopPlayback());
+    $('playback-prev')?.addEventListener('click', () => {
+      const snapshot = state.playback?.snapshot();
+      if (!snapshot) return;
+      const target = snapshot.track ? snapshot.track.startMinutes : snapshot.segment.startAbs;
+      const abs = snapshot.kind === 'day' ? snapshot.segment.startAbs - (((snapshot.absoluteMinutes % 1440) + 1440) % 1440) + target : snapshot.segment.startAbs;
+      applySnapshot(state.playback.seekAbsolute(abs));
+    });
+    $('playback-next')?.addEventListener('click', () => applySnapshot(state.playback?.skipNext()));
+    $('playback-range')?.addEventListener('input', (event) => {
+      if (!state.playback) return;
+      const ratio = Number(event.target.value) / 1000;
+      applySnapshot(state.playback.seekAbsolute(ratio * state.playback.playlist.totalSim));
+    });
+    $('playback-follow')?.addEventListener('change', (event) => {
+      state.follow = event.target.checked;
+    });
+    $('playback-narrate')?.addEventListener('change', (event) => {
+      state.narrate = event.target.checked;
+      toast(state.narrate ? '数字人将在每个抵达点播报' : '已关闭播报');
+    });
+    document.querySelectorAll('#playback-speeds button').forEach((button) => {
+      button.addEventListener('click', () => {
+        const speed = Number(button.dataset.speed);
+        const snapshot = state.playback?.snapshot();
+        state.playback?.setSpeed(speed);
+        state.playbackSpeed = speed;
+        document.querySelectorAll('#playback-speeds button').forEach((node) => {
+          node.classList.toggle('active', node.dataset.speed === String(speed));
+        });
+        if (snapshot) applySnapshot(state.playback.seekAbsolute(snapshot.absoluteMinutes));
+      });
+    });
+    // 手动拖动地图 = 解除跟随
+    $('planner-map-canvas')?.addEventListener('pointerdown', () => {
+      if (!state.playbackMode || !state.follow) return;
+      state.follow = false;
+      const follow = $('playback-follow');
+      if (follow) follow.checked = false;
+      toast('已解除镜头跟随（可在地图上自由查看）');
+    });
+  }
+
   wireStatic();
+  wirePlayback();
 
   return {
     open,
     close,
     isOpen: () => !root.classList.contains('hidden'),
     openFlow,
+    playDay,
+    playGuide,
+    stopPlayback,
+    playbackState: () => {
+      const snapshot = state.playback?.snapshot();
+      return {
+        active: state.playbackMode,
+        day: snapshot?.day ?? null,
+        kind: snapshot?.kind ?? null,
+        clock: snapshot?.clockText ?? null,
+        speed: state.playback?.state.speed ?? null,
+        playing: state.playback?.state.playing ?? false,
+        traveler: snapshot?.traveler ?? null,
+        entries: snapshot?.entries?.length ?? 0,
+        legIndex: snapshot?.legIndex ?? -1,
+        hasNightLayer: Boolean(state.mapView?.nightInfo?.().enabled),
+        realProgress: snapshot?.realProgress ?? 0,
+      };
+    },
     reload: async () => {
       if (!state.flow) return;
       await refreshFlowList();

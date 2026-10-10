@@ -80,11 +80,18 @@ async def stream_reply(
     knowledge: Sequence[Knowledge],
     history: Sequence[tuple[str, str]],
     question: str,
+    *,
+    system_prompt: str | None = None,
+    allow_mock: bool = True,
 ) -> AsyncIterator[str]:
-    """逐段产出回复文本。无 Key 时使用本地知识库拼装，行为对外一致。"""
+    """逐段产出回复文本。无 Key 时使用本地知识库拼装，行为对外一致。
+
+    system_prompt 用于穿越系统等自定义人格场景；传入时优先使用，city 仅作为兜底资料。
+    allow_mock=False 时跳过本地知识库（穿越对话按约定只走大模型）。
+    """
 
     settings = get_settings()
-    if settings.mock:
+    if allow_mock and settings.mock:
         answer = mock_answer(city, knowledge, question)
         step = 3
         for index in range(0, len(answer), step):
@@ -95,7 +102,9 @@ async def stream_reply(
     from openai import AsyncOpenAI
 
     client = AsyncOpenAI(api_key=settings.openai_api_key, base_url=settings.base_url)
-    messages: list[dict[str, str]] = [{"role": "system", "content": build_system_prompt(city, knowledge)}]
+    messages: list[dict[str, str]] = [
+        {"role": "system", "content": system_prompt or build_system_prompt(city, knowledge)}
+    ]
     for role, content in history[-6:]:
         messages.append({"role": role, "content": content})
     messages.append({"role": "user", "content": question})

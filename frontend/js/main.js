@@ -11,6 +11,7 @@ import { createMural } from './mural.js';
 import { createRoute } from './route.js';
 import { createCityLayer } from './map/city_layer.js';
 import { createProvinceLayer } from './map/province_layer.js';
+import { createDynastyMode } from './map/dynasty_mode.js';
 import { createFlowEditor } from './map/flow_editor.js';
 import { createGuideBuilder } from './map/guide_builder.js';
 import { createPanelChat } from './panel_chat.js';
@@ -190,15 +191,15 @@ async function boot() {
   scene.add(backdrop.group);
 
   // 浮雕地形与国境描边
-  const terrain = buildTerrain(CHINA_OUTLINE, { ranges: RANGES });
+  let terrain = buildTerrain(CHINA_OUTLINE, { ranges: RANGES });
   scene.add(terrain.mesh);
-  const borderGlow = buildBorders(CHINA_OUTLINE, {
+  let borderGlow = buildBorders(CHINA_OUTLINE, {
     lift: 0.03,
     opacity: 0.20,
     color: '#7fd3e0',
     linewidth: 6.0,
   });
-  const borderMain = buildBorders(CHINA_OUTLINE, {
+  let borderMain = buildBorders(CHINA_OUTLINE, {
     lift: 0.05,
     opacity: 0.85,
     color: '#f0e4c8',
@@ -206,6 +207,37 @@ async function boot() {
   });
   scene.add(borderGlow.object);
   scene.add(borderMain.object);
+
+  // 底图切换：穿越模式用该朝的示意疆域重建浮雕与描边；传 null 恢复现代国境。
+  // 材质与日照 uniforms 由同一套工厂重建，昼夜/晨昏线照常生效。
+  let currentOutline = CHINA_OUTLINE;
+
+  function normalizeRings(rings) {
+    if (!Array.isArray(rings) || rings.length < 3) return CHINA_OUTLINE;
+    const first = rings[0];
+    // 单环（[lng,lat] 点列表）自动包一层：穿越数据就是一个闭合环
+    if (Array.isArray(first) && typeof first[0] === 'number') return [rings];
+    return rings;
+  }
+
+  function applyOutline(rings, { color = null } = {}) {
+    const outline = normalizeRings(rings);
+    [terrain, borderGlow, borderMain].forEach((entry) => {
+      const object = entry.mesh || entry.object;
+      scene.remove(object);
+      object.geometry?.dispose?.();
+      entry.material?.dispose?.();
+    });
+    terrain = buildTerrain(outline, { ranges: RANGES });
+    scene.add(terrain.mesh);
+    borderGlow = buildBorders(outline, { lift: 0.03, opacity: 0.2, color: '#7fd3e0', linewidth: 6.0 });
+    borderMain = buildBorders(outline, { lift: 0.05, opacity: 0.85, color: color || '#f0e4c8', linewidth: 2.6 });
+    borderGlow.material.resolution.set(window.innerWidth, window.innerHeight);
+    borderMain.material.resolution.set(window.innerWidth, window.innerHeight);
+    scene.add(borderGlow.object);
+    scene.add(borderMain.object);
+    currentOutline = outline;
+  }
 
   // 城市光点
   const cityWorld = cities.map((city) => worldPosition(city.lng, city.lat, RANGES, 0));
@@ -239,10 +271,27 @@ async function boot() {
     onSpeak: narrate,
     resolveSlug: (name) => findCity(cityIndex, name)?.slug || '',
     onCityChange: (city) => panelChat?.setCity(city),
+    // 推演时把沙盘幕布与时间牌同步到模拟时刻；退出时回到实时
+    onSceneTime: (date) => {
+      if (!date) return;
+      clockState.live = false;
+      clockState.override = date;
+    },
+    onSceneLive: () => {
+      clockState.live = true;
+      clockState.override = null;
+    },
   });
 
   // 我的攻略：把多城流程组合成整体行程（总里程 / 总时长 / 逐日安排）
-  const guide = createGuideBuilder({ onSpeak: narrate });
+  const guide = createGuideBuilder({
+    onSpeak: narrate,
+    onPlay: (guideId) => {
+      toggleDrawer(false);
+      guide.close();
+      planner.playGuide(guideId);
+    },
+  });
 
   // 抄作业：粘贴攻略链接/正文/截图 → 生成计划块与草稿攻略
   const importWizard = createImportWizard({
@@ -320,19 +369,23 @@ async function boot() {
 
   const voice = new VoiceIO({
     onToken: (text) => {
+      if (dynastyMode.onToken(text)) return;
       ui.appendToken(text);
       panelChat?.appendToken(text);
     },
     onSentence: (text) => {
+      if (dynastyMode.onSentence(text)) return;
       voice.enqueue(text);
       ui.setSpeech(text, muted);
       panelChat?.setSpeech(text);
     },
     onDone: () => {
+      if (dynastyMode.onDone()) return;
       ui.endAssistant();
       panelChat?.end();
     },
     onError: (message) => {
+      if (dynastyMode.onError(message)) return;
       ui.toast(message);
       ui.endAssistant();
       panelChat?.addSystem(message);
@@ -360,6 +413,37 @@ async function boot() {
     if (!muted) voice.enqueue(text);
     ui.setSpeech(text, muted);
   }
+
+  // 穿越模式：唐 / 宋 / 明（示意疆域底图 + 历史地名 + 诗词写作地 + 朝代对话）
+  // 穿越期间不做行程规划：现代图层整体隐藏，双击城市不会打开流程编辑器。
+  const dynastyMode = createDynastyMode({
+    scene,
+    camera,
+    controls,
+    ui,
+    voice,
+    narrate,
+    applyOutline,
+    flyTo,
+    closeDrawer: () => toggleDrawer(false),
+    onEnter: () => {
+      toggleDrawer(false);
+      planner.close();
+      guide.close();
+      importWizard.close();
+      if (route?.active) {
+        route.setActive(false);
+        document.body.classList.remove('route-mode');
+      }
+      closeCity();
+    },
+    onExit: () => closeCity(),
+  });
+  const dynastyEnter = () => dynastyMode.enter(document.getElementById('dynasty-select')?.value);
+  // 穿越模式与「行程 / 攻略」互斥：从抽屉进这些功能时先回到现代，避免拿历史疆域排版现代点位
+  const leaveDynasty = () => {
+    if (dynastyMode.isActive()) dynastyMode.exit();
+  };
 
   // 路线规划（LKH-3.0.14）
   let route = null;
@@ -404,6 +488,7 @@ async function boot() {
   }
 
   async function openCity(slug) {
+    if (dynastyMode.isActive()) return; // 穿越模式只看历史地名，不进入现代城市
     const index = cities.findIndex((item) => item.slug === slug);
     if (index < 0) return;
     const city = cities[index];
@@ -447,7 +532,7 @@ async function boot() {
   // 注意：重点城市在沙盘上是 DOM 标签按钮（ui.js → onCityActivate），普通地级市走画布光点，两条路都汇到这里。
   let pendingCityClick = null;
   function handleCityActivate(city, event) {
-    if (!city) return;
+    if (!city || dynastyMode.isActive()) return;
     const unified = findCity(cityIndex, city.name) || city;
     if (pendingCityClick) {
       window.clearTimeout(pendingCityClick.timer);
@@ -544,6 +629,11 @@ async function boot() {
   renderer.domElement.addEventListener('pointermove', (event) => {
     // 让数字人的视线跟随鼠标（Fay 规范：ParamEyeBallX/Y + 头部角度）
     human.focus(event.clientX, window.innerHeight - event.clientY);
+    if (dynastyMode.isActive()) {
+      // 穿越模式只命中历史地名 / 诗词写作地；现代城市光点不参与
+      renderer.domElement.style.cursor = dynastyMode.pointerMove(event) ? 'pointer' : 'grab';
+      return;
+    }
     const positions = cityPoints.screenPositions(camera, window.innerWidth, window.innerHeight);
     let hover = -1;
     let best = STAGE.cityHoverPx;
@@ -578,6 +668,12 @@ async function boot() {
       return;
     }
     pointerDownAt = null;
+
+    // 穿越模式：点地名/诗词弹卡，点空白处只收卡片，不触发省份飞行，也不进流程编辑
+    if (dynastyMode.isActive()) {
+      dynastyMode.pointerUp(event);
+      return;
+    }
 
     // 1) 重点城市（带讲解）：单击看 3D 地标，双击进入流程编辑
     if (hoverIndex >= 0) {
@@ -661,12 +757,30 @@ async function boot() {
 
   // 我的攻略入口
   document.getElementById('guide-open')?.addEventListener('click', () => {
+    leaveDynasty();
     toggleDrawer(false);
     guide.open();
   });
 
   document.getElementById('guide-import')?.addEventListener('click', () => {
+    leaveDynasty();
     importWizard.open();
+  });
+
+  // 穿越模式：抽屉里的朝代选择 + 顶部状态条
+  document.getElementById('dynasty-enter')?.addEventListener('click', () => dynastyEnter());
+  document.getElementById('dynasty-exit')?.addEventListener('click', () => dynastyMode.exit());
+  document.getElementById('dynasty-bar-exit')?.addEventListener('click', () => dynastyMode.exit());
+  document.getElementById('dc-close')?.addEventListener('click', () => dynastyMode.closeCard());
+  dynastyMode.loadList().then((items) => {
+    const select = document.getElementById('dynasty-select');
+    const note = document.getElementById('dynasty-note');
+    const preview = () => {
+      const item = (items || []).find((entry) => entry.key === select?.value);
+      if (item && note) note.textContent = `${item.name} · ${item.period} · 都城${item.capital} —— ${item.summary}`;
+    };
+    select?.addEventListener('change', preview);
+    preview();
   });
 
   // 省份选择：直接飞到指定省份（下拉 + 按钮）
@@ -695,6 +809,7 @@ async function boot() {
 
   // 行程规划入口（用城市卡片里选过的城市，否则用北京）
   document.getElementById('planner-open')?.addEventListener('click', () => {
+    leaveDynasty();
     const card = document.getElementById('city-card');
     const city = card?.__city || cities[0];
     toggleDrawer(false);
@@ -862,7 +977,7 @@ async function boot() {
       ? (landmarkProgress = Math.min(landmarkTarget, landmarkProgress + delta * 1.6))
       : (landmarkProgress = Math.max(landmarkTarget, landmarkProgress - delta * 2.2));
     const rise = landmarkTarget > 0 ? easeOutBack(clamp(landmarkProgress, 0, 1)) : landmarkProgress;
-    cityStage.visible = landmarkProgress > 0.01;
+    cityStage.visible = !dynastyMode.isActive() && landmarkProgress > 0.01;
     cityStage.scale.setScalar(Math.max(0.001, rise));
     cityStage.position.y = (1 - clamp(landmarkProgress, 0, 1)) * 0.35;
 
@@ -873,6 +988,7 @@ async function boot() {
     cityPoints.setNight(
       cities.map((city) => smoothstep(3, -8, sunAltitudeAt(city.lng, city.lat, date))),
     );
+    cityPoints.mesh.visible = !dynastyMode.isActive();
     cityPoints.material.uniforms.uTime.value = now / 1000;
     cityPoints.material.uniforms.uNightFactor.value = state.nightFactor;
     cityPoints.material.uniforms.uOpacity.value = 1 - open * 0.35;
@@ -881,17 +997,20 @@ async function boot() {
 
     route?.update(delta);
 
-    cityLayer.setOpacity(planner.isOpen() ? 0 : 0.9);
+    const dynastyActive = dynastyMode.isActive();
+    cityLayer.setOpacity(dynastyActive || planner.isOpen() ? 0 : 0.9);
     // 光点在屏幕上的大小基本恒定：相机拉近时按比例缩小，避免加色光斑铺满屏幕
     const cameraDistance = camera.position.length();
     cityLayer.setScale(Math.max(0.32, Math.min(1.15, cameraDistance / 6.4)));
     cityLayer.update(camera, now / 1000, window.innerWidth, window.innerHeight);
     // 城市图层标签统一放在渲染之后、和重点城市标签共用一套占位网格（见下方 labelMask）
-    provinceLayer.update(cityLayer.state.viewKm || Infinity);
+    provinceLayer.update(dynastyActive ? Infinity : cityLayer.state.viewKm || Infinity);
+    provinceLayer.group.visible = !dynastyActive;
     perf.frame = (perf.frame || 0) + 1;
-    if (perf.frame % 8 === 0) {
+    if (!dynastyActive && perf.frame % 8 === 0) {
       provinceLayer.updateLabels(camera, window.innerWidth, window.innerHeight);
     }
+    dynastyMode.update(now / 1000, state, date);
     applyAdaptiveQuality(delta);
 
     human.setEnergy(muted ? 0 : voice.level());
@@ -957,6 +1076,7 @@ async function boot() {
 
   const routeButton = document.getElementById('route-btn');
   routeButton.addEventListener('click', () => {
+    leaveDynasty();
     const next = !route.active;
     route.setActive(next);
     document.body.classList.toggle('route-mode', next);
@@ -994,6 +1114,10 @@ async function boot() {
     plannerOpen: (city) => planner.open(city),
     plannerClose: () => planner.close(),
     plannerReload: () => planner.reload(),
+    playback: () => planner.playbackState(),
+    playbackDay: () => planner.playDay(),
+    playbackGuide: (guideId) => planner.playGuide(guideId),
+    playbackStop: () => planner.stopPlayback(),
     plannerDebug: () => planner.debug(),
     plannerFit: () => planner.fit(),
     plannerMap: () => planner.mapInstance(),
@@ -1046,6 +1170,25 @@ async function boot() {
       total: cityLayer.cities.length,
       viewKm: cityLayer.state.viewKm || 0,
     }),
+    dynasty: () => dynastyMode.debug(),
+    dynastyEnter: (key) => dynastyMode.enter(key || document.getElementById('dynasty-select')?.value),
+    dynastyExit: () => dynastyMode.exit(),
+    dynastyPlace: (id) => dynastyMode.openPlace(id),
+    dynastyPoem: (id) => dynastyMode.openPoem(id),
+    dynastyGlow: (id) => dynastyMode.glowScreen(id),
+    dynastyCard: () => ({
+      ...dynastyMode.debug(),
+      title: document.getElementById('dc-title')?.textContent || '',
+      sub: document.getElementById('dc-sub')?.textContent || '',
+      log: (document.getElementById('dc-log')?.textContent || '').slice(-400),
+    }),
+    dynastyAsk: (text) => {
+      const input = document.getElementById('dc-input');
+      if (!input) return false;
+      input.value = text || '';
+      document.getElementById('dc-send')?.click();
+      return true;
+    },
     focusCity: (name) => focusCityByName(name),
     /** 城市光点在屏幕上的真实位置（与点击命中判定同源，自动化验收用）。 */
     cityScreen: (name) => {
@@ -1108,6 +1251,17 @@ async function boot() {
       muted,
       landmark: landmarkProgress,
       cameraDistance: camera.position.distanceTo(controls.target),
+      terrain: {
+        rings: currentOutline.length,
+        points: currentOutline.reduce((sum, ring) => sum + ring.length, 0),
+        vertices: terrain.mesh.geometry.attributes.position.count,
+      },
+      layers: {
+        cityPoints: cityPoints.mesh.visible,
+        cityStage: cityStage.visible,
+        cityLayerOpacity: Number((cityLayer.state.opacity || 0).toFixed(2)),
+        provinceGroup: provinceLayer.group.visible,
+      },
     }),
   };
 
