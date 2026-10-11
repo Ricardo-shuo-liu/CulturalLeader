@@ -22,6 +22,7 @@ const { LANDMARKS_CN } = await import(path.join(root, 'frontend/js/data/landmark
 const cityIndexUtils = await import(path.join(root, 'frontend/js/map/city_index.js'));
 const dynastyMode = await import(path.join(root, 'frontend/js/map/dynasty_mode.js'));
 const poemGlow = await import(path.join(root, 'frontend/js/map/poem_glow.js'));
+const dynastyRoutes = await import(path.join(root, 'frontend/js/map/dynasty_routes.js'));
 
 const results = [];
 function check(name, fn) {
@@ -517,7 +518,7 @@ function loadDynastyPayloads() {
     'import sys, json',
     "sys.path.insert(0, 'backend')",
     'from app.data import dynasties as d',
-    "print(json.dumps([d.get_dynasty(k) for k in ('tang', 'song', 'ming')], ensure_ascii=False))",
+    'print(json.dumps([d.get_dynasty(k) for k in d.DYNASTIES], ensure_ascii=False))',
   ].join('\n');
   const raw = execFileSync(python, ['-c', script], { cwd: root, encoding: 'utf8', maxBuffer: 8 * 1024 * 1024 });
   return JSON.parse(raw);
@@ -531,22 +532,27 @@ try {
   dynastyLoadError = error.message;
 }
 
-check('穿越：三朝数据完整（疆域闭合 + 12 地名 + 12 诗词）', () => {
+const PERIODS = ['qin', 'han', 'sanguo', 'jin', 'sui', 'tang', 'song', 'yuan', 'ming', 'qing', 'modern'];
+
+check('穿越：秦→现代 11 个时期数据完整（疆域闭合 + 地名 + 诗词）', () => {
   if (!dynastyPayloads) {
     return `跳过真实数据校验（未能调用 python：${dynastyLoadError.slice(0, 80)}）`;
   }
-  assert.equal(dynastyPayloads.length, 3, '应正好三朝');
+  assert.equal(dynastyPayloads.length, PERIODS.length, '时期数量应为 11');
   const keys = dynastyPayloads.map((item) => item.key);
-  assert.deepEqual(keys, ['tang', 'song', 'ming']);
+  assert.deepEqual(keys, PERIODS, '时期应按时间顺序（秦→现代）');
   const summaries = dynastyPayloads.map((item) => dynastyMode.validateDynastyPayload(item));
   dynastyPayloads.forEach((dynasty) => {
     assert.ok(dynasty.period && dynasty.capital && dynasty.color, `${dynasty.key} 缺少年代/都城/主题色`);
     assert.ok(dynasty.summary, `${dynasty.key} 缺少一句话简介`);
+    assert.ok(dynasty.places.length >= 12, `${dynasty.key} 地名不足：${dynasty.places.length}`);
+    assert.ok(dynasty.poems.length >= 10, `${dynasty.key} 诗词不足：${dynasty.poems.length}`);
     // 命名唯一性只在同一朝代内要求（扬州/洛阳这类地名本就跨朝沿用）
     const names = new Set();
     dynasty.places.forEach((place) => {
       const label = `${place.ancient}|${place.modern}`;
       assert.ok(!names.has(label), `${dynasty.key} 地名重复：${label}`);
+      assert.ok(place.ancient && place.modern, `${dynasty.key}/${place.id} 地名不完整`);
       names.add(label);
     });
     dynasty.poems.forEach((poem) => {
@@ -555,7 +561,29 @@ check('穿越：三朝数据完整（疆域闭合 + 12 地名 + 12 诗词）', (
       names.add(label);
     });
   });
-  return summaries.map((item) => `${item.key} ${item.outline}点/${item.places}地名/${item.poems}诗词`).join(' · ');
+  const totals = summaries.reduce(
+    (acc, item) => ({ places: acc.places + item.places, poems: acc.poems + item.poems }),
+    { places: 0, poems: 0 },
+  );
+  return `${summaries.length} 个时期 · ${totals.places} 地名 · ${totals.poems} 诗词（${summaries
+    .slice(0, 3)
+    .map((item) => `${item.key} ${item.outline}点`)
+    .join(' · ')} …）`;
+});
+
+check('穿越：地名标签按优先级占位、放不下才隐藏', () => {
+  const entries = [
+    { index: 0, x: 400, y: 300, visible: true, width: 60 },
+    { index: 1, x: 410, y: 305, visible: true, width: 60 }, // 与 0 重叠，应被隐藏
+    { index: 2, x: 900, y: 500, visible: true, width: 60 },
+    { index: 3, x: 960, y: 260, visible: false, width: 60 }, // 在相机背后
+    { index: 4, x: 4000, y: 300, visible: true, width: 60 }, // 屏幕外
+  ];
+  const shown = dynastyMode.layoutPlaceLabels(entries, { width: 1500, height: 900 });
+  assert.deepEqual(shown, [0, 2], `实际 ${shown.join(',')}`);
+  const none = dynastyMode.layoutPlaceLabels([], { width: 1500, height: 900 });
+  assert.deepEqual(none, []);
+  return `重叠/背面/屏外被隐藏：显示 ${shown.join('、')}`;
 });
 
 check('穿越：地名与诗词写作地在疆域内，投影落在舞台可视范围', () => {
@@ -564,12 +592,17 @@ check('穿越：地名与诗词写作地在疆域内，投影落在舞台可视�
   dynastyPayloads.forEach((dynasty) => {
     const bounds = dynastyMode.outlineBounds(dynasty.outline);
     const placeIds = new Set(dynasty.places.map((place) => place.id));
-    dynasty.places.forEach((place) => {
+    // 主地名 + 次级地名都要落在疆域内（次级只有名字、今名与坐标，卡片自动成文）
+    [...dynasty.places, ...(dynasty.minor || [])].forEach((place) => {
       assert.ok(place.lng >= bounds.minLng && place.lng <= bounds.maxLng, `${dynasty.key}/${place.id} 经度越界`);
       assert.ok(place.lat >= bounds.minLat && place.lat <= bounds.maxLat, `${dynasty.key}/${place.id} 纬度越界`);
       const point = geo.project(place.lng, place.lat);
       assert.ok(Math.abs(point.x) < 3.2 && Math.abs(point.y) < 1.9, `${dynasty.key}/${place.id} 投影越界`);
       count += 1;
+    });
+    (dynasty.minor || []).forEach((place) => {
+      assert.ok(place.ancient && place.modern, `${dynasty.key}/${place.id} 次级地名不完整`);
+      assert.ok(place.summary && place.narration, `${dynasty.key}/${place.id} 次级地名缺简介`);
     });
     dynasty.poems.forEach((poem) => {
       assert.ok(placeIds.has(poem.place_id), `${dynasty.key}/${poem.id} 写作地缺失`);
@@ -582,7 +615,7 @@ check('穿越：地名与诗词写作地在疆域内，投影落在舞台可视�
 check('穿越：朝代主题色与现代图层配色可区分', () => {
   if (!dynastyPayloads) return '跳过（无真实数据）';
   const colors = new Set(dynastyPayloads.map((item) => String(item.color).toUpperCase()));
-  assert.equal(colors.size, 3, '三朝主题色应各不相同');
+  assert.equal(colors.size, dynastyPayloads.length, '每个时期的主题色应各不相同');
   return Array.from(colors).join(' / ');
 });
 
@@ -599,13 +632,13 @@ check('穿越：光字两列竖排切分（五言 / 七言 / 词）', () => {
   return `五言「${five.join(' / ')}」· 七言「${seven.join(' / ')}」`;
 });
 
-check('穿越：每朝 4–8 首代表诗词发光字，且 id 都能对上', () => {
+check('穿越：每朝 4–8 首代表诗词（题名签）且 id 都能对上', () => {
   if (!dynastyPayloads) return '跳过（无真实数据）';
   return dynastyPayloads
     .map((dynasty) => {
       const ids = new Set(dynasty.poems.map((poem) => poem.id));
       const featured = dynasty.featured || [];
-      assert.ok(featured.length >= 4 && featured.length <= 8, `${dynasty.key} 光字数量 ${featured.length} 不在 4–8`);
+      assert.ok(featured.length >= 4 && featured.length <= 8, `${dynasty.key} 代表诗词 ${featured.length} 不在 4–8`);
       featured.forEach((id) => {
         assert.ok(ids.has(id), `${dynasty.key} 光字诗词不存在：${id}`);
       });
@@ -617,6 +650,35 @@ check('穿越：每朝 4–8 首代表诗词发光字，且 id 都能对上', ()
       return `${dynasty.key} ${featured.length} 首`;
     })
     .join(' · ');
+});
+
+check('穿越：次级地名让每期都有 20+ 个地名（地图不再空旷）', () => {
+  if (!dynastyPayloads) return '跳过（无真实数据）';
+  return dynastyPayloads
+    .map((dynasty) => {
+      const total = dynasty.places.length + (dynasty.minor?.length || 0);
+      assert.ok(total >= 20, `${dynasty.key} 地名只有 ${total} 个`);
+      assert.ok((dynasty.minor?.length || 0) >= 8, `${dynasty.key} 次级地名不足`);
+      return `${dynasty.key} ${total}`;
+    })
+    .join(' · ');
+});
+
+check('穿越：驿道光带按最近邻连边（每点至少一条、无重复）', () => {
+  const points = [
+    { x: 0, z: 0 },
+    { x: 1, z: 0 },
+    { x: 2, z: 0 },
+    { x: 2, z: 2 },
+    { x: 0, z: 2 },
+  ];
+  const edges = dynastyRoutes.nearestNeighborEdges(points, 2);
+  const keys = edges.map(([a, b]) => `${a}:${b}`);
+  assert.equal(new Set(keys).size, keys.length, '不应有重复边');
+  const touched = new Set(edges.flat());
+  assert.equal(touched.size, points.length, `每个点都要连上，实际 ${touched.size}/${points.length}`);
+  assert.ok(edges.every(([a, b]) => a < b), '边应规范化为 a<b');
+  return `${points.length} 点 → ${edges.length} 条连线`;
 });
 
 let failed = 0;

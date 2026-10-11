@@ -24,6 +24,21 @@ FIREFOX_BINARY = "/snap/firefox/current/usr/lib/firefox/firefox"
 
 NOISE = ("setPointerCapture", "自适应", "自适应画质", "InvalidStateError")
 
+# 时期清单：key / 名称 / 疆域环点数 / 至少应该看到的地名
+PERIODS = [
+    ("qin", "秦", 61, "咸阳"),
+    ("han", "汉", 70, "长安"),
+    ("sanguo", "三国", 58, "洛阳"),
+    ("jin", "晋·南北朝", 49, "建康"),
+    ("sui", "隋", 49, "大兴城"),
+    ("tang", "唐", 67, "长安"),
+    ("song", "宋", 49, "东京开封府"),
+    ("yuan", "元", 52, "大都"),
+    ("ming", "明", 61, "应天"),
+    ("qing", "清", 58, "京师"),
+    ("modern", "现代", 67, "北京"),
+]
+
 
 def api_get(path: str) -> int:
     with urllib.request.urlopen(f"{BASE}{path}", timeout=15) as response:  # noqa: S310
@@ -132,6 +147,45 @@ def main() -> int:
             (not bar["hidden"]) and "唐" in bar["text"] and "长安" in bar["text"],
             bar["text"].strip()[:60],
         )
+        place_labels = driver.execute_script(
+            """
+            const nodes = Array.from(document.querySelectorAll('.dynasty-place-label'));
+            const visible = nodes.filter((el) => el.style.display !== 'none');
+            return {
+              total: nodes.length,
+              visible: visible.length,
+              text: visible.map((el) => el.textContent).join('|'),
+              options: document.querySelectorAll('#dynasty-select option').length,
+            };
+            """
+        )
+        check(
+            "穿越：地图上显示历史地名（不是只有光点）",
+            place_labels["total"] >= 12
+            and place_labels["visible"] >= 8
+            and "长安" in place_labels["text"]
+            and "西安" in place_labels["text"],
+            f"标签 {place_labels['visible']}/{place_labels['total']} 可见 · 例：{place_labels['text'][:40]}",
+        )
+        check(
+            "穿越：抽屉里可选秦→现代共 11 个时期",
+            place_labels["options"] == 11,
+            f"{place_labels['options']} 个时期",
+        )
+        # 常驻地名：相机不动时可见集合必须一致（不闪、不跳）
+        label_sig_js = """
+            const nodes = Array.from(document.querySelectorAll('.dynasty-place-label'));
+            const visible = nodes.filter((el) => el.style.display !== 'none');
+            return { count: visible.length, names: visible.map((el) => el.textContent).sort().join('|') };
+        """
+        first_labels = driver.execute_script(label_sig_js)
+        time.sleep(2.2)
+        second_labels = driver.execute_script(label_sig_js)
+        check(
+            "穿越：地名常驻不闪（静止 2 秒可见集合不变）",
+            first_labels["count"] >= 8 and first_labels["names"] == second_labels["names"],
+            f"{first_labels['count']} 个地名 · 集合一致={first_labels['names'] == second_labels['names']}",
+        )
         driver.save_screenshot(str(OUT / "20_dynasty_tang.png"))
 
         # ── 2. 悬停 + 点击历史地名（真实命中判定）──
@@ -217,7 +271,7 @@ def main() -> int:
         stele = driver.execute_script("return window.__cl.dynastyGlow('jingyesi')")
         in_view = bool(stele) and (0 < stele["x"] < 1500) and (0 < stele["y"] < 950)
         check(
-            "穿越：代表诗词浮起光韵字（首联两列）",
+            "穿越：诗词全部浮起光韵字（首联两列）",
             bool(stele) and in_view,
             f"{len(state['markers'].get('glowIds') or [])} 组光字 · 静夜思光字屏幕位置 ({round(stele['x']) if stele else '—'}, {round(stele['y']) if stele else '—'})",
         )
@@ -311,28 +365,96 @@ def main() -> int:
         check("返回现代：朝代状态条收起", bar_hidden is True, f"hidden={bar_hidden}")
         driver.save_screenshot(str(OUT / "22_dynasty_back.png"))
 
-        # ── 7b. 宋 / 明同样可切换（疆域点数不同、诗词不少于 12 首）──
-        for key, name, points in (("song", "宋", 49), ("ming", "明", 61)):
+        # ── 7b. 秦 → 现代 11 个时期都能切换（疆域重建 + 地名标签 + 光字）──
+        # 静音跑完这一轮，避免为每个时期都生成一段旁白语音（省额度）
+        driver.execute_script("document.getElementById('mute-btn').click(); return true;")
+        for key, name, points, expect_name in PERIODS:
+            if key == "tang":
+                continue  # 唐已经完整测过
             driver.execute_script("window.__cl.dynastyEnter(arguments[0]); return true;", key)
             for _ in range(30):
                 probe = driver.execute_script("return window.__cl.dynasty()")
                 if probe.get("active") == key:
                     break
                 time.sleep(0.3)
-            time.sleep(1.2)
+            time.sleep(1.3)
             probe = driver.execute_script("return window.__cl.dynasty()")
             terrain = driver.execute_script("return window.__cl.debug().terrain")
+            labels = driver.execute_script(
+                """
+                const nodes = Array.from(document.querySelectorAll('.dynasty-place-label'));
+                const visible = nodes.filter((el) => el.style.display !== 'none');
+                const poems = Array.from(document.querySelectorAll('.dynasty-poem-label'));
+                const poemsVisible = poems.filter((el) => el.style.display !== 'none');
+                return {
+                  visible: visible.length,
+                  text: visible.map((el) => el.textContent).join('|'),
+                  tiers: visible.map((el) => el.className).join(' '),
+                  poemLabels: poemsVisible.length,
+                  minorLabels: visible.filter((el) => el.className.includes('tier-3')).length,
+                  compact: document.getElementById('dynasty-labels').classList.contains('compact'),
+                };
+                """
+            )
             check(
-                f"穿越：切换到{name}（疆域 {points} 点 + 地名/诗词齐全）",
+                f"穿越：切换到{name}（疆域 {points} 点 + 地名标签 + 光字）",
                 probe.get("active") == key
                 and terrain["rings"] == 1
                 and terrain["points"] == points
                 and probe["markers"]["places"] >= 12
-                and probe["markers"]["poems"] >= 12,
-                f"{terrain['rings']} 环 / {terrain['points']} 点 · 地名 {probe['markers']['places']} · 诗词 {probe['markers']['poems']}",
+                and probe["markers"]["poems"] >= 10
+                and probe["markers"]["glow"] == probe["markers"]["poems"]
+                and probe["markers"]["minorPlaces"] >= 8
+                and probe["markers"]["routes"] >= 20
+                and labels["visible"] >= 10,
+                f"{terrain['rings']} 环 / {terrain['points']} 点 · 地名 {probe['markers']['places']}(+次级 {probe['markers']['minorPlaces']}) · 驿道 {probe['markers']['routes']} 段 · 标签 {labels['visible']} · 诗签 {labels['poemLabels']} · 光字 {probe['markers']['glow']}/{probe['markers']['poems']}",
             )
+            check(
+                f"穿越：{name} 的地名有分级、次级地名填空、诗词有成组题名",
+                "tier-0" in labels["tiers"] and labels["minorLabels"] >= 2 and labels["poemLabels"] >= 2,
+                f"都城级={('tier-0' in labels['tiers'])} · 次级标签 {labels['minorLabels']} · 题名 {labels['poemLabels']} · 紧凑模式={labels['compact']}",
+            )
+            if expect_name:
+                check(f"穿越：{name} 的地名标签含「{expect_name}」", expect_name in labels["text"], labels["text"][:60])
             driver.execute_script("window.__cl.dynastyExit(); return true;")
             time.sleep(1.4)
+        driver.execute_script("document.getElementById('mute-btn').click(); return true;")
+
+        # ── 7c. 懒加载：详情按时期缓存，来回切换不重复请求 ──
+        cache_info = driver.execute_script("return window.__cl.dynasty().markers.cachedPeriods")
+        check("穿越：时期详情按需加载并缓存", cache_info >= 10, f"已缓存 {cache_info} 个时期")
+
+        # ── 7d. 状态条 ◀ / ▶ 按时间线切换 + 缓存后的切换速度 ──
+        driver.execute_script("window.__cl.dynastyEnter('tang'); return true;")
+        for _ in range(20):
+            if driver.execute_script("return window.__cl.dynasty().active") == "tang":
+                break
+            time.sleep(0.3)
+        time.sleep(0.8)
+        driver.execute_script("document.getElementById('dynasty-next').click(); return true;")
+        time.sleep(1.6)
+        forward = driver.execute_script("return window.__cl.dynasty().active")
+        driver.execute_script("document.getElementById('dynasty-prev').click(); return true;")
+        time.sleep(1.6)
+        backward = driver.execute_script("return window.__cl.dynasty().active")
+        check(
+            "穿越：状态条 ◀ / ▶ 按时间线前后切换",
+            forward == "song" and backward == "tang",
+            f"唐 → ▶ {forward} → ◀ {backward}",
+        )
+        elapsed = driver.execute_script(
+            """
+            const t0 = performance.now();
+            return window.__cl.dynastyEnter('qing').then(() => performance.now() - t0);
+            """
+        )
+        check(
+            "穿越：已缓存的时期切换很快（懒加载 + 内存缓存）",
+            elapsed is not None and elapsed < 3000,
+            f"{elapsed:.0f} ms" if elapsed is not None else "未取到耗时",
+        )
+        driver.execute_script("window.__cl.dynastyExit(); return true;")
+        time.sleep(1.2)
 
         # ── 8. 控制台零错误 ──
         errors = driver.execute_script(

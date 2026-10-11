@@ -725,6 +725,7 @@ async function boot() {
     camera.updateProjectionMatrix();
     borderGlow.material.resolution.set(width, height);
     borderMain.material.resolution.set(width, height);
+    dynastyMode.resize(width, height); // 驿道光带同样是按像素线宽绘制的
     // 在流程编辑/攻略面板里数字人改用小尺寸（CSS 位置见 map_ui.css），避免被放大糊掉
     const inPanel = document.body.classList.contains('planner-open');
     human.resize(
@@ -771,6 +772,8 @@ async function boot() {
   document.getElementById('dynasty-enter')?.addEventListener('click', () => dynastyEnter());
   document.getElementById('dynasty-exit')?.addEventListener('click', () => dynastyMode.exit());
   document.getElementById('dynasty-bar-exit')?.addEventListener('click', () => dynastyMode.exit());
+  document.getElementById('dynasty-prev')?.addEventListener('click', () => dynastyMode.step(-1));
+  document.getElementById('dynasty-next')?.addEventListener('click', () => dynastyMode.step(1));
   document.getElementById('dc-close')?.addEventListener('click', () => dynastyMode.closeCard());
   dynastyMode.loadList().then((items) => {
     const select = document.getElementById('dynasty-select');
@@ -1173,6 +1176,7 @@ async function boot() {
     dynasty: () => dynastyMode.debug(),
     dynastyEnter: (key) => dynastyMode.enter(key || document.getElementById('dynasty-select')?.value),
     dynastyExit: () => dynastyMode.exit(),
+    dynastyStep: (delta) => dynastyMode.step(delta || 1),
     dynastyPlace: (id) => dynastyMode.openPlace(id),
     dynastyPoem: (id) => dynastyMode.openPoem(id),
     dynastyGlow: (id) => dynastyMode.glowScreen(id),

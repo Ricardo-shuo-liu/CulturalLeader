@@ -118,7 +118,6 @@ async def dynasty_chat(key: str, payload: DynastyChatRequest, db: Session = Depe
                 history,
                 payload.message,
                 system_prompt=system_prompt,
-                allow_mock=False,
             ):
                 collected.append(delta)
                 buffer += delta

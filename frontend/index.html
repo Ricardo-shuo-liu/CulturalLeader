@@ -22,11 +22,14 @@
     <div id="labels" aria-hidden="true"></div>
 
     <div id="dynasty-bar" class="hidden">
+      <button id="dynasty-prev" type="button" title="上一个时期">◀</button>
       <span id="dynasty-bar-name">唐</span>
       <span id="dynasty-bar-meta"></span>
+      <button id="dynasty-next" type="button" title="下一个时期">▶</button>
       <button id="dynasty-bar-exit" type="button">返回现代</button>
     </div>
     <div id="dynasty-tip" class="hidden" aria-hidden="true"></div>
+    <div id="dynasty-labels" aria-hidden="true"></div>
 
 
 
@@ -329,16 +332,24 @@
 
       <section class="drawer-section">
         <h4>穿越</h4>
-        <label class="drawer-label" for="dynasty-select">选择朝代</label>
+        <label class="drawer-label" for="dynasty-select">选择时期（秦 → 现代）</label>
         <select id="dynasty-select">
+          <option value="qin">秦 · 前 221–前 206 · 咸阳</option>
+          <option value="han">汉 · 前 202–220 · 长安</option>
+          <option value="sanguo">三国 · 220–280 · 洛阳</option>
+          <option value="jin">晋·南北朝 · 265–589 · 建康</option>
+          <option value="sui">隋 · 581–618 · 大兴</option>
           <option value="tang">唐 · 618–907 · 长安</option>
           <option value="song">宋 · 960–1279 · 东京开封府</option>
+          <option value="yuan">元 · 1271–1368 · 大都</option>
           <option value="ming">明 · 1368–1644 · 应天府</option>
+          <option value="qing">清 · 1636–1912 · 北京</option>
+          <option value="modern">现代 · 1912–今 · 北京</option>
         </select>
         <button id="dynasty-enter" class="drawer-btn primary" type="button">开始穿越</button>
         <button id="dynasty-exit" class="drawer-btn" type="button">返回现代</button>
         <p class="drawer-note" id="dynasty-note">
-          选择朝代后「开始穿越」：底图整体换成该朝示意疆域，现代地名与地标全部收起。
+          秦 → 现代共 11 个时期：底图整体换成该时期示意疆域，现代地名与地标全部收起，改显当时的地名（含今名）与诗句光字。
         </p>
         <div class="drawer-label">本朝诗词（点一首飞到写作地）</div>
         <div id="dynasty-poems" class="dynasty-poems"></div>

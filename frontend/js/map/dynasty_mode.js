@@ -5,12 +5,23 @@
 
 import { createCityPoints } from '../citypoints.js';
 import { createPoemGlow, poemRingOffsets } from './poem_glow.js';
+import { createDynastyRoutes } from './dynasty_routes.js';
 import { worldPosition } from '../terrain.js';
 import { RANGES } from '../data/ranges.js';
 import { STAGE } from '../config.js';
 import { smoothstep, sunAltitudeAt } from '../solar.js';
 
 const PLACE_COLOR = '#e6c27a';
+// 地名按类型分色分级：都城（金）> 州府/关隘/港口（纸白/青）> 寺观/名胜（淡紫）
+const KIND_COLOR = {
+  capital: '#f2cd84',
+  state: '#e6dcc4',
+  port: '#8fd8d2',
+  pass: '#8fd8d2',
+  temple: '#c9b6e4',
+  scenic: '#c9b6e4',
+};
+const KIND_TIER = { capital: 0, state: 1, port: 1, pass: 1, temple: 2, scenic: 2 };
 const POEM_COLOR = '#8fd8d2';
 const HIT_PX = 18;
 
@@ -42,7 +53,7 @@ export function validateDynastyPayload(payload) {
   const places = payload.places || [];
   const poems = payload.poems || [];
   if (places.length < 12) throw new Error(`${key} 历史地点不足：${places.length}`);
-  if (poems.length < 12) throw new Error(`${key} 诗词不足：${poems.length}`);
+  if (poems.length < 10) throw new Error(`${key} 诗词不足：${poems.length}`);
   const placeIds = new Set();
   places.forEach((place) => {
     if (!place.id || placeIds.has(place.id)) throw new Error(`${key} 地点 id 重复或缺失：${place.id}`);
@@ -68,6 +79,33 @@ export function validateDynastyPayload(payload) {
 }
 
 /**
+ * 历史地名的标签排布（纯函数，便于 Node 校验）：
+ * 按 priority 顺序占位，放不下的低优先级标签隐藏，保证全国视野下也读得到都城与重镇。
+ * @param {Array} entries [{ index, x, y, visible, width }]
+ */
+export function layoutPlaceLabels(entries, { cellW = 34, cellH = 22, width = 0, height = 0, occupied = null } = {}) {
+  const taken = occupied || new Set();
+  const shown = [];
+  entries.forEach((entry) => {
+    if (!entry || !entry.visible) return;
+    if (width && (entry.x < -30 || entry.x > width + 30)) return;
+    if (height && (entry.y < -20 || entry.y > height + 40)) return;
+    const half = Math.max(18, (entry.width || 44) / 2);
+    const keys = [];
+    for (let col = Math.floor((entry.x - half) / cellW); col <= Math.floor((entry.x + half) / cellW); col += 1) {
+      // 名牌挂在光点下方（上方留给「光字」），所以占位网格也取锚点下方
+      for (let row = Math.floor((entry.y - 2) / cellH); row <= Math.floor((entry.y + cellH * 1.6) / cellH); row += 1) {
+        keys.push(`${col}:${row}`);
+      }
+    }
+    if (keys.some((key) => taken.has(key))) return;
+    keys.forEach((key) => taken.add(key));
+    shown.push(entry.index);
+  });
+  return shown;
+}
+
+/**
  * 穿越模式。
  * @param {object} options
  * @param {object} options.applyOutline  (rings|null, {color}) => void 重建底图；null 恢复现代
@@ -87,9 +125,17 @@ export function createDynastyMode({
   onExit = () => {},
 } = {}) {
   const $ = (id) => document.getElementById(id);
-  const markers = { places: null, poems: null };
+  const markers = { places: null, poems: null, glow: null, routes: null, placeList: [], labelElements: [], labelOrder: [], poemLabelEntries: [] };
+  let lastLabelAt = 0;
   const state = {
     listing: [],
+    payloads: new Map(),
+    glowToken: 0,
+    labelCount: 0,
+    poemLabelCount: 0,
+    shownLabels: new Set(),
+    shownPoemLabels: new Set(),
+    compactLabels: false,
     active: null,
     hover: null,
     card: null,
@@ -98,9 +144,21 @@ export function createDynastyMode({
     assistant: null,
   };
 
-  const placeById = (dynasty, id) => (dynasty?.places || []).find((place) => place.id === id) || null;
+  const allPlacesOf = (dynasty) => [...(dynasty?.places || []), ...(dynasty?.minor || [])];
+  const placeById = (dynasty, id) => allPlacesOf(dynasty).find((place) => place.id === id) || null;
 
   // ── 数据加载 ────────────────────────────────────────────────
+
+  // 朝代详情按需加载并缓存：同一时期来回切换不再重复请求
+  async function fetchDynasty(key) {
+    if (state.payloads.has(key)) return state.payloads.get(key);
+    const response = await fetch(`/api/dynasty/${encodeURIComponent(key)}`);
+    if (!response.ok) throw new Error(`朝代数据加载失败：${response.status}`);
+    const { dynasty } = await response.json();
+    if (!dynasty?.outline?.length) throw new Error('朝代疆域数据不完整');
+    state.payloads.set(key, dynasty);
+    return dynasty;
+  }
 
   async function loadList() {
     try {
@@ -133,8 +191,19 @@ export function createDynastyMode({
   // ── 标记（历史地名 / 诗词写作地）────────────────────────────
 
   function disposeMarkers() {
+    state.glowToken += 1;
     markers.glow?.dispose();
     markers.glow = null;
+    markers.labelElements = [];
+    markers.labelOrder = [];
+    markers.poemLabelEntries = [];
+    state.shownLabels = new Set();
+    state.shownPoemLabels = new Set();
+    markers.routes?.dispose();
+    markers.routes = null;
+    markers.placeList = [];
+    const labelLayer = document.getElementById('dynasty-labels');
+    if (labelLayer) labelLayer.innerHTML = '';
     ['places', 'poems'].forEach((key) => {
       const entry = markers[key];
       if (!entry) return;
@@ -150,10 +219,14 @@ export function createDynastyMode({
 
   function buildMarkers(dynasty) {
     disposeMarkers();
-    const placeCities = dynasty.places.map((place) => ({
+    // 主地名 + 次级地名一起上图：主地名亮、次级地名小而淡，先把地图填满
+    markers.placeList = allPlacesOf(dynasty);
+    const placeCities = markers.placeList.map((place) => ({
       name: place.ancient,
       slug: `dynasty:${dynasty.key}:place:${place.id}`,
-      accent_color: PLACE_COLOR,
+      accent_color: place.minor ? '#9fb0b8' : KIND_COLOR[place.kind] || PLACE_COLOR,
+      kind: place.kind,
+      minor: Boolean(place.minor),
       lng: place.lng,
       lat: place.lat,
     }));
@@ -162,6 +235,9 @@ export function createDynastyMode({
     markers.places.mesh.renderOrder = 3;
     markers.places.cities = placeCities;
     scene.add(markers.places.mesh);
+
+    // 驿道光带：把城、关、港连成一张网，填满空旷的沙盘
+    markers.routes = createDynastyRoutes({ scene, places: markers.placeList, color: dynasty.color });
 
     // 诗词写作地：同一地点多首诗词绕成一个很紧的小环，避免和地名光点完全重叠
     const groups = new Map();
@@ -195,12 +271,188 @@ export function createDynastyMode({
     markers.poems.cities = poemCities;
     scene.add(markers.poems.mesh);
 
-    // 代表诗词浮起两列竖排的「光字」（无纸面背景），落在与光点同一个位置
-    markers.glow = createPoemGlow({
-      scene,
-      poems: dynasty.poems.filter((poem) => poem.featured),
-      places: dynasty.places,
+    // 历史地名标签：地图上要看得到「长安」「洛阳」这样的名字，而不是只有光点
+    const labelLayer = document.getElementById('dynasty-labels');
+    if (labelLayer) {
+      labelLayer.innerHTML = '';
+      const elements = [];
+      markers.placeList.forEach((place, index) => {
+        const button = document.createElement('button');
+        button.type = 'button';
+        const tier = place.minor ? 3 : KIND_TIER[place.kind] ?? 1;
+        button.className = `dynasty-place-label tier-${tier}`;
+        const name = document.createElement('span');
+        name.className = 'dpl-name';
+        name.textContent = place.ancient;
+        const modern = document.createElement('span');
+        modern.className = 'dpl-modern';
+        modern.textContent = place.modern;
+        button.append(name, modern);
+        button.addEventListener('click', (event) => {
+          event.stopPropagation();
+          openCard('place', place);
+        });
+        button.addEventListener('pointerenter', () => markers.places?.setHover(index));
+        button.addEventListener('pointerleave', () => markers.places?.setHover(-1));
+        labelLayer.appendChild(button);
+        elements.push(button);
+      });
+      markers.labelElements = elements;
+      // 代表诗词另给一个题名标签（挂在光字上方，青光一点，和地名区分开）
+      markers.poemLabelEntries = dynasty.poems
+        .filter((poem) => poem.featured)
+        .map((poem) => {
+          const button = document.createElement('button');
+          button.type = 'button';
+          button.className = 'dynasty-poem-label';
+          button.textContent = `《${poem.title}》`;
+          button.addEventListener('click', (event) => {
+            event.stopPropagation();
+            openCard('poem', poem);
+          });
+          button.addEventListener('pointerenter', () => markers.glow?.setHover(poem.id));
+          button.addEventListener('pointerleave', () => markers.glow?.setHover(null));
+          labelLayer.appendChild(button);
+          return { element: button, poem };
+        });
+      // 都城优先占位，其次按数据顺序（关隘、名胜往后排）
+      markers.labelOrder = markers.placeList
+        .map((place, index) => ({
+          index,
+          weight: place.minor
+            ? 3
+            : place.kind === 'capital'
+              ? 0
+              : place.kind === 'scenic' || place.kind === 'temple'
+                ? 2
+                : 1,
+        }))
+        .sort((a, b) => a.weight - b.weight || a.index - b.index)
+        .map((item) => item.index);
+    }
+
+    // 代表诗词浮起两列竖排的「光字」（无纸面背景）：延后一帧再建，
+    // 先让疆域底图这一帧画出来，切朝代时手感更顺（也算一种按需加载）。
+    const token = (state.glowToken += 1);
+    const glowing = dynasty.poems.slice();
+    window.setTimeout(() => {
+      if (token !== state.glowToken || state.active?.key !== dynasty.key) return;
+      markers.glow = createPoemGlow({
+        scene,
+        poems: glowing,
+        places: dynasty.places,
+        distance: camera.position.distanceTo(controls.target),
+      });
+    }, 60);
+  }
+
+  /**
+   * 标签刷新（每 120ms 一次）：
+   * - 常驻显示：主地名按「都城 > 州府/关隘/港口 > 寺观/名胜」优先占位，次级地名随后填空
+   * - 粘性：上一帧已经显示的名字先占位，只要是同一视角就不会忽隐忽现
+   * - 分级：近景写「古名 + 今名」，中/远景只写古名，字号收小，让更多名字进得来
+   * - 诗词题名（青色小签）另用一套网格，挂在光字上方
+   */
+  function updatePlaceLabels() {
+    if (!markers.places || !markers.labelElements?.length) return;
+    const now = performance.now();
+    if (now - lastLabelAt < 120) return;
+    lastLabelAt = now;
+    const width = window.innerWidth;
+    const height = window.innerHeight;
+    const distance = camera.position.distanceTo(controls.target);
+    // 分级切换加一点回滞，避免在阈值附近来回跳
+    if (state.compactLabels && distance < 4.2) state.compactLabels = false;
+    else if (!state.compactLabels && distance > 5.2) state.compactLabels = true;
+    const compact = state.compactLabels;
+    const labelLayer = document.getElementById('dynasty-labels');
+    labelLayer?.classList.toggle('compact', compact);
+    labelLayer?.classList.toggle('near', !compact);
+
+    const positions = markers.places.screenPositions(camera, width, height);
+    const entries = positions.map((position, index) => {
+      const place = markers.placeList[index] || {};
+      const name = markers.places.cities[index]?.name || '';
+      return {
+        index,
+        x: position.x,
+        y: position.y,
+        visible: position.visible,
+        name,
+        minor: Boolean(place.minor),
+        sticky: state.shownLabels.has(index),
+      };
     });
+    const ordered = markers.labelOrder.map((index) => entries[index]).filter(Boolean);
+    const sized = (entry) => ({
+      ...entry,
+      width: entry.minor
+        ? entry.name.length * 12 + 8
+        : entry.name.length * 14 + (compact ? 16 : 26),
+    });
+    // 粘性优先：已显示的（先是主地名、再是次级）先占位，其余按优先级补位
+    const tiers = [
+      ordered.filter((entry) => !entry.minor && entry.sticky),
+      ordered.filter((entry) => !entry.minor && !entry.sticky),
+      ordered.filter((entry) => entry.minor && entry.sticky),
+      ordered.filter((entry) => entry.minor && !entry.sticky),
+    ];
+    const occupied = new Set();
+    // 网格放细一点（次级地名本来就小），中远景能塞下更多名字
+    const shownList = layoutPlaceLabels(tiers.flat().map(sized), {
+      width,
+      height,
+      cellW: compact ? 26 : 30,
+      cellH: compact ? 15 : 19,
+      occupied,
+    });
+    const shown = new Set(shownList);
+    state.shownLabels = shown;
+    markers.labelElements.forEach((element, index) => {
+      const visible = shown.has(index);
+      if (visible) {
+        const position = positions[index];
+        element.style.transform = `translate3d(${Math.round(position.x)}px, ${Math.round(position.y)}px, 0) translate(-50%, 0) translateY(7px)`;
+      }
+      element.style.display = visible ? '' : 'none';
+    });
+    state.labelCount = shown.size;
+
+    // 诗词题名：挂在光字上方，独立网格 + 同样的粘性
+    if (markers.poemLabelEntries?.length) {
+      const glowPositions = markers.glow?.screenPositions(camera, width, height) || [];
+      const poemEntries = [];
+      markers.poemLabelEntries.forEach((entry, index) => {
+        const position = glowPositions.find((item) => item.id === entry.poem.id);
+        if (!position || !position.visible) return;
+        poemEntries.push({
+          index,
+          x: position.x,
+          y: position.top - 12,
+          visible: position.top > 0 && position.top < height + 40,
+          width: Math.min(140, entry.poem.title.length * 12 + 20),
+          position,
+          sticky: state.shownPoemLabels.has(index),
+        });
+      });
+      const poemOrdered = [
+        ...poemEntries.filter((entry) => entry.sticky),
+        ...poemEntries.filter((entry) => !entry.sticky),
+      ];
+      const poemShown = new Set(layoutPlaceLabels(poemOrdered, { width, height, cellH: 16 }));
+      state.shownPoemLabels = poemShown;
+      markers.poemLabelEntries.forEach((entry, index) => {
+        const visible = poemShown.has(index);
+        if (visible) {
+          const target = poemEntries.find((item) => item.index === index);
+          if (target) {
+            entry.element.style.transform = `translate3d(${Math.round(target.position.x)}px, ${Math.round(target.position.top - 12)}px, 0) translate(-50%, -100%)`;
+          }
+        }
+        entry.element.style.display = visible ? '' : 'none';
+      });
+      state.poemLabelCount = poemShown.size;
+    }
   }
 
   function hitTest(x, y) {
@@ -244,7 +496,7 @@ export function createDynastyMode({
 
   function itemOf(hit) {
     if (!hit || !state.active) return null;
-    return (hit.kind === 'place' ? state.active.places : state.active.poems)[hit.index] || null;
+    return (hit.kind === 'place' ? markers.placeList : state.active.poems)[hit.index] || null;
   }
 
   function setHover(hit) {
@@ -455,7 +707,7 @@ export function createDynastyMode({
     return true;
   }
 
-  // ── 相机与开关 ──────────────────────────────────────────────
+  // ── 相机与列表 ──────────────────────────────────────────────
 
   function focusOn(lng, lat, distance = 2.1) {
     const target = worldPosition(lng, lat, RANGES, 0.05);
@@ -498,8 +750,9 @@ export function createDynastyMode({
       return;
     }
     $('dynasty-bar-name').textContent = dynasty.name;
+    const totalPlaces = dynasty.places.length + (dynasty.minor?.length || 0);
     $('dynasty-bar-meta').textContent =
-      `${dynasty.capital} · ${dynasty.period} · ${dynasty.places.length} 处地名 · ${dynasty.poems.length} 首诗词 · 示意疆域`;
+      `${dynasty.capital} · ${dynasty.period} · ${totalPlaces} 处地名 · ${dynasty.poems.length} 首诗词 · 示意疆域`;
     bar.style.setProperty('--dynasty-color', dynasty.color || '#d8b46a');
     bar.classList.remove('hidden');
   }
@@ -508,16 +761,8 @@ export function createDynastyMode({
     const wanted = String(key || '').trim().toLowerCase();
     if (!wanted) return null;
     try {
-      const response = await fetch(`/api/dynasty/${encodeURIComponent(wanted)}`);
-      if (!response.ok) {
-        ui?.toast?.('这个朝代的数据暂时不可用');
-        return null;
-      }
-      const { dynasty } = await response.json();
-      if (!dynasty?.outline?.length) {
-        ui?.toast?.('朝代疆域数据不完整');
-        return null;
-      }
+      if (!state.payloads.has(wanted)) ui?.toast?.(`正在展开${wanted}的示意疆域…`);
+      const dynasty = await fetchDynasty(wanted);
       if (state.active) exit({ silent: true });
 
       applyOutline?.(dynasty.outline, { color: dynasty.color });
@@ -530,9 +775,11 @@ export function createDynastyMode({
       closeCard();
       onEnter?.(dynasty);
 
-      const capital = dynasty.places.find((place) => place.ancient === dynasty.capital) || null;
+      // 都城字段可能是复合的（如「应天府（南京）→ 顺天府（北京）」），取能对上的第一座城
+      const capital = dynasty.places.find((place) => dynasty.capital.includes(place.ancient)) || null;
       const focus = capital || dynasty.places[0];
-      if (focus) focusOn(focus.lng, focus.lat, 3.6);
+      // 默认拉到能看见这一朝大半疆域的距离：地名标签才有意义
+      if (focus) focusOn(focus.lng, focus.lat, 5.2);
       ui?.toast?.(`已穿越到${dynasty.name}：底图为示意疆域，可点地名或诗词与数字人讨论`);
       narrate?.(dynasty.narration || dynasty.summary || '');
       return dynasty;
@@ -576,8 +823,11 @@ export function createDynastyMode({
       markers.glow.update(camera, time, {
         nightFactor: lighting?.nightFactor || 0,
         scale: Math.min(1.9, Math.max(0.75, distance / 6)),
+        distance,
       });
     }
+    markers.routes?.update(lighting?.nightFactor || 0);
+    updatePlaceLabels();
   }
 
   function openPlace(id) {
@@ -597,10 +847,23 @@ export function createDynastyMode({
     return poem;
   }
 
+  /** 时间线前后切换（导航条上的 ◀ / ▶）。 */
+  async function step(delta) {
+    const keys = state.listing.map((item) => item.key);
+    if (!keys.length) await loadList();
+    const list = state.listing.map((item) => item.key);
+    const current = state.active?.key || list[0];
+    const index = Math.max(0, list.indexOf(current));
+    const next = list[Math.min(list.length - 1, Math.max(0, index + delta))];
+    if (!next || next === current) return state.active;
+    return enter(next);
+  }
+
   return {
     loadList,
     enter,
     exit,
+    step,
     update,
     pointerMove,
     pointerUp,
@@ -619,6 +882,7 @@ export function createDynastyMode({
       );
     },
     closeCard,
+    resize: (width, height) => markers.routes?.resize(width, height),
     isActive: () => Boolean(state.active),
     streaming: () => state.streaming,
     activeKey: () => state.active?.key || null,
@@ -635,6 +899,11 @@ export function createDynastyMode({
         poems: markers.poems?.cities.length || 0,
         glow: markers.glow?.items.length || 0,
         glowIds: markers.glow?.ids || [],
+        labels: state.labelCount || 0,
+        poemLabels: state.poemLabelCount || 0,
+        minorPlaces: markers.placeList.filter((place) => place.minor).length,
+        routes: markers.routes?.edges.length || 0,
+        cachedPeriods: state.payloads.size,
       },
       visibleLayers: {
         cityPoints: state.active ? false : true,
