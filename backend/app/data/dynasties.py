@@ -37,6 +37,66 @@ FEATURED = {
     "modern": ["zaibiekangqiao", "yueye", "zichao", "qizizhige", "wangdalu", "duijiu"],
 }
 
+# 千年模式用到的两样东西：当朝人的口吻（对话）与代表时刻（日照）。
+# lighting 是「月-日T时:分」，前端按它驱动日照；现代一期为 None（用实时）。
+MILLENNIUM_META: dict[str, dict] = {
+    "qin": {
+        "persona": "说话像秦的吏卒，自称「某」，称客人「足下」，只知秦事，不知后世。",
+        "lighting": "03-12T08:10",
+        "lighting_label": "春日清晨",
+    },
+    "han": {
+        "persona": "自称「臣」或「小人」，用汉时语汇（郡国、亭长、驿传），称客人「客」，只知汉事。",
+        "lighting": "09-21T12:00",
+        "lighting_label": "秋分正午",
+    },
+    "sanguo": {
+        "persona": "自称「在下」，谈三国人物如数家珍，只知三国之事，不提前后朝代。",
+        "lighting": "11-08T17:30",
+        "lighting_label": "深秋黄昏",
+    },
+    "jin": {
+        "persona": "带一点清谈的雅致，自称「吾」，称客人「足下」，只知晋与南北朝。",
+        "lighting": "05-04T09:20",
+        "lighting_label": "暮春上午",
+    },
+    "sui": {
+        "persona": "说话像隋的驿卒，自称「小的」，称客人「客官」，只知隋事。",
+        "lighting": "02-18T07:10",
+        "lighting_label": "初春清晨",
+    },
+    "tang": {
+        "persona": "长安市井口吻，自称「某」，称客人「郎君」「娘子」，只知唐事，以为自己活在开元天宝年间。",
+        "lighting": "06-22T19:40",
+        "lighting_label": "夏至黄昏",
+    },
+    "song": {
+        "persona": "汴京书铺伙计口吻，自称「小人」，称客人「客官」，只知宋事，不识元明。",
+        "lighting": "10-01T17:10",
+        "lighting_label": "秋日傍晚",
+    },
+    "yuan": {
+        "persona": "大都驿路上的商人，自称「俺」，称客人「客人」，只知元事，口吻爽利。",
+        "lighting": "12-21T10:00",
+        "lighting_label": "冬至上午",
+    },
+    "ming": {
+        "persona": "衙门书吏口吻，自称「在下」，称客人「先生」，只知明事，不识清。",
+        "lighting": "04-05T16:30",
+        "lighting_label": "清明午后",
+    },
+    "qing": {
+        "persona": "茶馆说书人口吻，自称「小的」，称客人「您这位客官」，只知清事，不提民国。",
+        "lighting": "08-15T20:10",
+        "lighting_label": "中秋夜",
+    },
+    "modern": {
+        "persona": "博物馆讲解员口吻，通晓古今但不卖弄，讲得平实亲切。",
+        "lighting": None,
+        "lighting_label": "实时",
+    },
+}
+
 
 def dynasty_list() -> list[dict]:
     items = []
@@ -109,6 +169,7 @@ def get_dynasty(key: str) -> dict | None:
         "poems": len(payload["poems"]),
         "total_places": len(payload["places"]) + len(payload["minor"]),
     }
+    payload["millennium"] = MILLENNIUM_META.get(item["key"]) or {}
     return payload
 
 
@@ -127,14 +188,25 @@ def find_poem(dynasty: dict, poem_id: str | None) -> dict | None:
 # 对话走数字人原有的那套链路，这里只做「提示词指定」：说清是哪一朝、都城与当前话题。
 PERSONA_TEMPLATE = """你是「{dynasty_full}（{period}）」的数字人讲解员，此刻陪着观众站在这一朝的疆域沙盘前。
 都城：{capital}。这一朝的背景：{summary}
+当你以「当朝本地人」的身份说话时，用这样的口吻：{persona}
 {context}
 用中文口语自然作答，像面对面聊天，每次 2–4 句、适合朗读；不要用 Markdown 标题或列表，
-不要提「知识库」「资料」这类词。史实拿不准或学界有争议时，直说存在不同说法，不要编造年份与原文。"""
+不要提「知识库」「资料」这类词。史实拿不准或学界有争议时，直说存在不同说法，不要编造年份与原文。
+你只活在这一朝，后世的事你不知道；被问到时用当朝人的身份说「那是我身后的事了」。"""
 
 
-def build_system_prompt(dynasty: dict, *, place: dict | None = None, poem: dict | None = None) -> str:
-    """朝代对话的 system prompt：带当前地点或诗词的上下文。"""
+def build_system_prompt(
+    dynasty: dict,
+    *,
+    place: dict | None = None,
+    poem: dict | None = None,
+    anchor: str | None = None,
+) -> str:
+    """朝代对话的 system prompt：带当前地点或诗词的上下文；anchor 是千年模式锁定的点。"""
     lines: list[str] = []
+    if anchor:
+        lines.append(f"\n此刻观众锁定了同一个地点看时间流动：{anchor.strip()[:120]}")
+        lines.append("- 请始终站在这个地点、这个时代说话；对不属于此时此地的传闻，坦白说不知道或没听说过。")
     if poem:
         lines.append(f"\n当前话题：诗词《{poem['title']}》（{poem['author']}）")
         lines.append(f"- 全文：{poem['text']}")
@@ -155,5 +227,6 @@ def build_system_prompt(dynasty: dict, *, place: dict | None = None, poem: dict 
         period=dynasty.get("period") or "",
         capital=dynasty.get("capital") or "",
         summary=dynasty.get("summary") or "",
+        persona=(dynasty.get("millennium") or {}).get("persona") or "用这一朝普通人的口吻说话。",
         context="\n".join(lines) if lines else "",
     )

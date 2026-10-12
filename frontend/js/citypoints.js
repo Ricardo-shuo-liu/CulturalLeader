@@ -18,7 +18,14 @@ export function createCityPoints(cities, positions) {
   const scales = new Float32Array(count);
   const hovers = new Float32Array(count);
   const nights = new Float32Array(count);
+  // 开场「次第点亮」用：每颗光点按经度排一个点亮次序（0=最西，1=最东）
+  const reveals = new Float32Array(count);
   const worldPositions = [];
+
+  const lngs = cities.map((city) => Number(city.lng) || 0);
+  const minLng = Math.min(...lngs);
+  const maxLng = Math.max(...lngs);
+  const lngSpan = maxLng - minLng || 1;
 
   cities.forEach((city, index) => {
     const point = positions[index];
@@ -30,6 +37,7 @@ export function createCityPoints(cities, positions) {
     scales[index] = STAGE.cityCoreSize * (index % 2 === 0 ? 1.0 : 0.88);
     hovers[index] = 0;
     nights[index] = 0;
+    reveals[index] = (lngs[index] - minLng) / lngSpan;
   });
 
   geometry.setAttribute('iOffset', new THREE.InstancedBufferAttribute(offsets, 3));
@@ -40,6 +48,8 @@ export function createCityPoints(cities, positions) {
   geometry.setAttribute('iHover', hoverAttribute);
   const nightAttribute = new THREE.InstancedBufferAttribute(nights, 1);
   geometry.setAttribute('iNight', nightAttribute);
+  const revealAttribute = new THREE.InstancedBufferAttribute(reveals, 1);
+  geometry.setAttribute('iRevealT', revealAttribute);
   geometry.instanceCount = count;
   geometry.boundingSphere = new THREE.Sphere(new THREE.Vector3(), 30);
 
@@ -51,6 +61,7 @@ export function createCityPoints(cities, positions) {
       uTime: { value: 0 },
       uNightFactor: { value: 0 },
       uOpacity: { value: 1 },
+      uRevealP: { value: 1 },
     },
     vertexShader: /* glsl */ `
       attribute vec3 iOffset;
@@ -59,24 +70,29 @@ export function createCityPoints(cities, positions) {
       attribute float iScale;
       attribute float iHover;
       attribute float iNight;
+      attribute float iRevealT;
 
       uniform float uTime;
+      uniform float uRevealP;
 
       varying vec2 vUv;
       varying vec3 vColor;
       varying float vPulse;
       varying float vHover;
       varying float vNight;
+      varying float vReveal;
 
       void main() {
         vUv = uv;
         vColor = iColor;
         vHover = iHover;
         vNight = iNight;
+        // uRevealP 从 0 走到 1：西边的光点先亮，东边的后亮
+        vReveal = smoothstep(iRevealT - 0.06, iRevealT + 0.02, uRevealP);
 
         float pulse = 0.5 + 0.5 * sin(uTime * 1.7 + iPhase);
         vPulse = pulse;
-        float scale = iScale * (1.0 + 0.12 * pulse + 0.42 * iHover);
+        float scale = iScale * (1.0 + 0.12 * pulse + 0.42 * iHover) * (0.55 + 0.45 * vReveal);
 
         // billboard：在视图空间铺开四边形，任何视角都正对相机
         vec4 center = modelViewMatrix * vec4(iOffset, 1.0);
@@ -93,6 +109,7 @@ export function createCityPoints(cities, positions) {
       varying float vPulse;
       varying float vHover;
       varying float vNight;
+      varying float vReveal;
 
       void main() {
         float d = length(vUv - 0.5) * 2.0;
@@ -103,6 +120,7 @@ export function createCityPoints(cities, positions) {
         float boost = mix(0.45, 1.3, max(vNight, uNightFactor * 0.5));
         color *= (0.72 + 0.42 * vPulse) * boost * (1.0 + 0.55 * vHover);
         float alpha = glow * (0.62 + 0.3 * vPulse) * (1.0 + 0.5 * vHover) * uOpacity;
+        alpha *= mix(0.06, 1.0, vReveal);
         gl_FragColor = vec4(color, clamp(alpha, 0.0, 1.0));
       }
     `,
@@ -127,6 +145,10 @@ export function createCityPoints(cities, positions) {
       state.hoverIndex = index;
       if (index >= 0) hovers[index] = 1;
       hoverAttribute.needsUpdate = true;
+    },
+    /** 开场用：0 = 全部隐去，1 = 全部点亮（按经度依次亮起）。 */
+    setReveal(progress) {
+      material.uniforms.uRevealP.value = Math.min(1, Math.max(0, Number(progress) || 0));
     },
     get hoverIndex() {
       return state.hoverIndex;

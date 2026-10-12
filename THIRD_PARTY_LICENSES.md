@@ -15,3 +15,5 @@
 | 地图山脊走向（手工勾勒） | 浮雕地形 | 本项目自制 | `frontend/js/data/ranges.js`，非测绘数据 |
 | Live2D 官方示例模型（Hiyori，随 CubismWebSamples 分发） | 开箱可用的**开发/演示**形象 | Live2D Open Software License §5.5：**仅限内部评估与培训** | 位于 `frontend/assets/live2d/model/`；**对外发布前必须替换**，详见 `licenses/Live2D-许可要点.md` |
 | 其它 Live2D 模型文件 | 数字人形象 | **由模型作者决定** | 请勿提交来源不明或限制再分发的模型；`.gitignore` 默认忽略 `frontend/assets/live2d/model/*` |
+| 环境音与电影配乐（风声 / 水声 / 古琴） | 舞台环境音、旅行电影配乐 | **本项目自制（程序化合成）** | 无第三方音频素材：风声/水声为 WebAudio 噪声合成，古琴为 Karplus-Strong 拨弦合成，见 `frontend/js/audio_assets.js`。若把 CC0 素材放进 `frontend/assets/audio/`，请在此登记来源与许可 |
+| 标题衬线字体（Noto Serif CJK SC） | 标题 / 卡片字体 | SIL Open Font License 1.1 | 通过 CSS 字体栈使用**系统已安装**的字体（`--serif`），不随仓库分发字体文件；未安装时回落到系统宋体/衬线 |

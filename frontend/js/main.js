@@ -12,10 +12,14 @@ import { createRoute } from './route.js';
 import { createCityLayer } from './map/city_layer.js';
 import { createProvinceLayer } from './map/province_layer.js';
 import { createDynastyMode } from './map/dynasty_mode.js';
+import { createMillenniumMode } from './map/millennium.js';
+import { createMovieExport } from './map/movie_export.js';
 import { createFlowEditor } from './map/flow_editor.js';
 import { createGuideBuilder } from './map/guide_builder.js';
 import { createPanelChat } from './panel_chat.js';
 import { createImportWizard } from './import_wizard.js';
+import { createIntro } from './intro.js';
+import { createAmbience } from './ambience.js';
 import { cityCardMeta, findCity, loadCityIndex } from './map/city_index.js';
 import { LANDMARKS_CN } from './data/landmarks-cn.js';
 import { applyLandmarkLighting, createLandmarkScene, landmarkFactory } from './landmarks.js';
@@ -48,6 +52,12 @@ function dateFromBeijingMinutes(minutes) {
   return new Date(
     Date.UTC(today.year, today.month, today.day, Math.floor(minutes / 60) - 8, minutes % 60, 0),
   );
+}
+
+/** 开场专用：把舞台锁到北京时间的某个时刻（分钟）。 */
+function setSceneMinutes(minutes) {
+  clockState.live = false;
+  clockState.override = dateFromBeijingMinutes(minutes);
 }
 
 function sceneDate() {
@@ -264,6 +274,11 @@ async function boot() {
     ui.setSpeech(text, muted);
   };
 
+  // 环境音（首次手势后淡入）与两个大件（千年 / 旅行电影）——先声明，后面再接线
+  const ambience = createAmbience();
+  let millennium = null;
+  let movieExport = null;
+
   // 城市游玩流程编辑器（双击城市进入）：真实可拖拽地图 + LKH TSPTW 重新优化
   // 规划时数字人依然站在面板里，可以边排点位边问问题（panelChat 稍后创建）
   let panelChat = null;
@@ -301,6 +316,138 @@ async function boot() {
       if (payload?.guideId) await guide.openGuide(payload.guideId);
       ui.toast(`已生成 ${payload?.flowIds?.length || 0} 个计划块，可在真实地图上继续编辑`);
     },
+  });
+
+  // 地标升起时的一圈尘土（微交互）：一次性精灵，1.1 秒内升起散开
+  const dustBursts = [];
+  const dustTexture = (() => {
+    const size = 64;
+    const surface = document.createElement('canvas');
+    surface.width = size;
+    surface.height = size;
+    const ctx = surface.getContext('2d');
+    const gradient = ctx.createRadialGradient(size / 2, size / 2, 1, size / 2, size / 2, size / 2);
+    gradient.addColorStop(0, 'rgba(226, 210, 176, 0.9)');
+    gradient.addColorStop(0.5, 'rgba(206, 186, 150, 0.32)');
+    gradient.addColorStop(1, 'rgba(206, 186, 150, 0)');
+    ctx.fillStyle = gradient;
+    ctx.fillRect(0, 0, size, size);
+    return new THREE.CanvasTexture(surface);
+  })();
+
+  function spawnDustBurst(spot, count = 16) {
+    for (let index = 0; index < count; index += 1) {
+      const material = new THREE.SpriteMaterial({
+        map: dustTexture,
+        transparent: true,
+        depthWrite: false,
+        blending: THREE.AdditiveBlending,
+        opacity: 0.55,
+      });
+      const sprite = new THREE.Sprite(material);
+      const angle = (index / count) * Math.PI * 2 + Math.random() * 0.4;
+      const speed = 0.05 + Math.random() * 0.09;
+      sprite.position.copy(spot);
+      sprite.position.y += 0.02 + Math.random() * 0.03;
+      sprite.scale.setScalar(0.035 + Math.random() * 0.04);
+      scene.add(sprite);
+      dustBursts.push({
+        sprite,
+        vx: Math.cos(angle) * speed,
+        vy: 0.045 + Math.random() * 0.07,
+        vz: Math.sin(angle) * speed,
+        life: 1.1 + Math.random() * 0.3,
+        age: 0,
+      });
+    }
+  }
+
+  function updateDustBursts(delta) {
+    for (let index = dustBursts.length - 1; index >= 0; index -= 1) {
+      const burst = dustBursts[index];
+      burst.age += delta;
+      const view = burst.age / burst.life;
+      if (view >= 1) {
+        scene.remove(burst.sprite);
+        burst.sprite.material.dispose();
+        dustBursts.splice(index, 1);
+        continue;
+      }
+      burst.sprite.position.x += burst.vx * delta;
+      burst.sprite.position.y += burst.vy * delta;
+      burst.sprite.position.z += burst.vz * delta;
+      burst.vy -= 0.06 * delta;
+      burst.sprite.material.opacity = 0.5 * (1 - view) ** 1.4;
+      burst.sprite.scale.multiplyScalar(1 + delta * 0.6);
+    }
+  }
+
+  /** 升起地标：回弹动画 + 尘土（城市面板与旅行电影共用）。 */
+  function riseLandmark(spot, key) {
+    cityStage.position.copy(spot);
+    if (key) setLandmark(key);
+    landmarkTarget = 1;
+    landmarkProgress = 0;
+    spawnDustBurst(spot);
+  }
+
+  // 旅行电影（A3 轻量版）：攻略 → 沙盘运镜 + 旁白 + 字幕 + 封尾二维码 → WebM
+  function movieShowCity(day) {
+    const entry = findCity(cityIndex, day.city);
+    if (!entry) return;
+    const spot = worldPosition(entry.lng, entry.lat, RANGES, 0);
+    riseLandmark(spot, entry.landmark_key);
+  }
+
+  function movieHideCity() {
+    landmarkTarget = 0;
+  }
+
+  movieExport = createMovieExport({
+    canvas,
+    camera,
+    controls,
+    ui,
+    cityBridge: { show: movieShowCity, hide: movieHideCity },
+    setSceneDate: (date) => {
+      clockState.live = false;
+      clockState.override = date;
+    },
+    setSceneLive: () => {
+      clockState.live = true;
+      clockState.override = null;
+    },
+  });
+
+  document.getElementById('guide-movie')?.addEventListener('click', () => {
+    const id = guide.currentId?.();
+    if (!id) {
+      ui.toast('先保存这份攻略，再导出旅行电影');
+      return;
+    }
+    movieExport.start(id);
+  });
+  document.getElementById('movie-close')?.addEventListener('click', () => movieExport.closeModal());
+  document.getElementById('movie-cancel')?.addEventListener('click', () => movieExport.cancel());
+
+  // 开场 30 秒：俯冲 → 穿云 → 晨昏线扫过 → 城市次第点亮 → 数字人开场白
+  const intro = createIntro({
+    camera,
+    controls,
+    cityPoints,
+    resolveCity: (name) => {
+      const entry = findCity(cityIndex, name);
+      if (!entry) return null;
+      return { name: entry.shortName || entry.name, lng: entry.lng, lat: entry.lat };
+    },
+    home: { position: homePosition, target: homeTarget },
+    narrate,
+    setSceneMinutes,
+    setSceneLive: () => {
+      clockState.live = true;
+      clockState.override = null;
+    },
+    ui,
   });
 
   // 地标与内场灯光
@@ -369,22 +516,26 @@ async function boot() {
 
   const voice = new VoiceIO({
     onToken: (text) => {
+      if (millennium?.onToken(text)) return;
       if (dynastyMode.onToken(text)) return;
       ui.appendToken(text);
       panelChat?.appendToken(text);
     },
     onSentence: (text) => {
+      if (millennium?.onSentence(text)) return;
       if (dynastyMode.onSentence(text)) return;
       voice.enqueue(text);
       ui.setSpeech(text, muted);
       panelChat?.setSpeech(text);
     },
     onDone: () => {
+      if (millennium?.onDone()) return;
       if (dynastyMode.onDone()) return;
       ui.endAssistant();
       panelChat?.end();
     },
     onError: (message) => {
+      if (millennium?.onError(message)) return;
       if (dynastyMode.onError(message)) return;
       ui.toast(message);
       ui.endAssistant();
@@ -394,8 +545,12 @@ async function boot() {
       ui.toast(message);
       panelChat?.addSystem(message);
     },
-    onSpeakStart: (text) => ui.setSpeech(text, muted),
+    onSpeakStart: (text) => {
+      ambience.duck();
+      ui.setSpeech(text, muted);
+    },
     onIdle: () => {
+      ambience.unduck();
       human.setSpeaking(false);
       ui.setSpeech(null);
     },
@@ -445,6 +600,50 @@ async function boot() {
     if (dynastyMode.isActive()) dynastyMode.exit();
   };
 
+  // 一块土地的千年：锁定一个城市点，让时间在这个点上流动。
+  // 与穿越全景、流程编辑互斥；进入时收起所有现代图层与面板。
+  millennium = createMillenniumMode({
+    scene,
+    camera,
+    controls,
+    ui,
+    voice,
+    narrate,
+    applyOutline,
+    flyTo,
+    closeDrawer: () => toggleDrawer(false),
+    onSceneTime: (date) => {
+      clockState.live = false;
+      clockState.override = date;
+    },
+    onSceneLive: () => {
+      clockState.live = true;
+      clockState.override = null;
+    },
+    onEnter: () => {
+      leaveDynasty();
+      toggleDrawer(false);
+      planner.close();
+      guide.close();
+      importWizard.close();
+      if (route?.active) {
+        route.setActive(false);
+        document.body.classList.remove('route-mode');
+      }
+      // 收起城市面板 / 城市卡，但不把相机送回全景（千年自己接管镜头）
+      ui.hidePanel();
+      ui.setActive(null);
+      activeCity = null;
+      sessionId = null;
+      backdropTarget = 0;
+      landmarkTarget = 0;
+      voice.stopSpeaking();
+      ui.setSpeech(null);
+      document.getElementById('city-card')?.classList.add('hidden');
+    },
+    onExit: () => {},
+  });
+
   // 路线规划（LKH-3.0.14）
   let route = null;
 
@@ -489,6 +688,7 @@ async function boot() {
 
   async function openCity(slug) {
     if (dynastyMode.isActive()) return; // 穿越模式只看历史地名，不进入现代城市
+    if (millennium?.isActive?.()) return; // 千年模式锁定在地点与时间上，不进入城市面板
     const index = cities.findIndex((item) => item.slug === slug);
     if (index < 0) return;
     const city = cities[index];
@@ -498,12 +698,15 @@ async function boot() {
     ui.setActive(slug);
     ui.showPanel(city);
     voice.stopSpeaking();
+    try {
+      // 记住最后访问的城市：开场镜头结尾定格在这里
+      window.localStorage.setItem('cl.lastCity', city.name);
+    } catch (error) {
+      /* 隐私模式下忽略 */
+    }
 
     const spot = cityWorld[index];
-    cityStage.position.copy(spot);
-    setLandmark(city.landmark_key);
-    landmarkTarget = 1;
-    landmarkProgress = 0;
+    riseLandmark(spot, city.landmark_key);
 
     const direction = camera.position.clone().sub(controls.target).normalize();
     const focus = spot.clone();
@@ -532,7 +735,7 @@ async function boot() {
   // 注意：重点城市在沙盘上是 DOM 标签按钮（ui.js → onCityActivate），普通地级市走画布光点，两条路都汇到这里。
   let pendingCityClick = null;
   function handleCityActivate(city, event) {
-    if (!city || dynastyMode.isActive()) return;
+    if (!city || dynastyMode.isActive() || millennium?.isActive?.()) return;
     const unified = findCity(cityIndex, city.name) || city;
     if (pendingCityClick) {
       window.clearTimeout(pendingCityClick.timer);
@@ -620,6 +823,7 @@ async function boot() {
   document.getElementById('mute-btn').addEventListener('click', () => {
     muted = !muted;
     if (muted) voice.stopSpeaking();
+    ambience.setMuted(muted);
     ui.setMuted(muted);
   });
 
@@ -632,6 +836,11 @@ async function boot() {
     if (dynastyMode.isActive()) {
       // 穿越模式只命中历史地名 / 诗词写作地；现代城市光点不参与
       renderer.domElement.style.cursor = dynastyMode.pointerMove(event) ? 'pointer' : 'grab';
+      return;
+    }
+    if (millennium?.isActive?.()) {
+      // 千年模式：地点点击由 DOM 名牌接管，画布本身不参与命中
+      renderer.domElement.style.cursor = 'grab';
       return;
     }
     const positions = cityPoints.screenPositions(camera, window.innerWidth, window.innerHeight);
@@ -674,6 +883,8 @@ async function boot() {
       dynastyMode.pointerUp(event);
       return;
     }
+    // 千年模式：地点由 DOM 名牌接管点击；空白处不做任何事（镜头锁在点上）
+    if (millennium?.isActive?.()) return;
 
     // 1) 重点城市（带讲解）：单击看 3D 地标，双击进入流程编辑
     if (hoverIndex >= 0) {
@@ -867,6 +1078,38 @@ async function boot() {
     if (city) planner.open(city);
   });
 
+  // 一块土地的千年：城市卡与城市面板都能进（锁定这个点，拖时间轴看两千年的样子）
+  document.getElementById('city-card-millennium')?.addEventListener('click', () => {
+    const card = document.getElementById('city-card');
+    const city = card?.__city;
+    card?.classList.add('hidden');
+    if (city) millennium.open(city);
+  });
+
+  document.getElementById('panel-millennium')?.addEventListener('click', () => {
+    if (!activeCity) return;
+    const city = { name: activeCity.name, lng: activeCity.lng, lat: activeCity.lat };
+    ui.hidePanel();
+    ui.setActive(null);
+    activeCity = null;
+    sessionId = null;
+    backdropTarget = 0;
+    landmarkTarget = 0;
+    voice.stopSpeaking();
+    ui.setSpeech(null);
+    millennium.open(city);
+  });
+
+  // 开场与环境音
+  document.getElementById('intro-skip')?.addEventListener('click', () => intro.skip());
+  document.getElementById('intro-replay')?.addEventListener('click', () => {
+    toggleDrawer(false);
+    intro.start({ replay: true });
+  });
+  document.getElementById('ambience-volume')?.addEventListener('input', (event) => {
+    ambience.setVolume(Number(event.target.value) / 100);
+  });
+
   window.addEventListener('resize', resize);
   resize();
 
@@ -941,6 +1184,8 @@ async function boot() {
 
   function frame(now) {
     const delta = Math.min(0.05, (now - lastTime) / 1000);
+    // 历史模式（穿越全景 / 千年）：现代图层整体收起，改显当期地点
+    const historyActive = dynastyMode.isActive() || Boolean(millennium?.isActive?.());
     perf.samples.push(delta * 1000);
     if (perf.samples.length > 120) perf.samples.shift();
     lastTime = now;
@@ -980,9 +1225,10 @@ async function boot() {
       ? (landmarkProgress = Math.min(landmarkTarget, landmarkProgress + delta * 1.6))
       : (landmarkProgress = Math.max(landmarkTarget, landmarkProgress - delta * 2.2));
     const rise = landmarkTarget > 0 ? easeOutBack(clamp(landmarkProgress, 0, 1)) : landmarkProgress;
-    cityStage.visible = !dynastyMode.isActive() && landmarkProgress > 0.01;
+    cityStage.visible = !historyActive && landmarkProgress > 0.01;
     cityStage.scale.setScalar(Math.max(0.001, rise));
     cityStage.position.y = (1 - clamp(landmarkProgress, 0, 1)) * 0.35;
+    updateDustBursts(delta);
 
     applySolarUniforms(terrain.material, state);
     terrain.material.uniforms.uTime.value = now / 1000;
@@ -991,7 +1237,7 @@ async function boot() {
     cityPoints.setNight(
       cities.map((city) => smoothstep(3, -8, sunAltitudeAt(city.lng, city.lat, date))),
     );
-    cityPoints.mesh.visible = !dynastyMode.isActive();
+    cityPoints.mesh.visible = !historyActive;
     cityPoints.material.uniforms.uTime.value = now / 1000;
     cityPoints.material.uniforms.uNightFactor.value = state.nightFactor;
     cityPoints.material.uniforms.uOpacity.value = 1 - open * 0.35;
@@ -1000,7 +1246,7 @@ async function boot() {
 
     route?.update(delta);
 
-    const dynastyActive = dynastyMode.isActive();
+    const dynastyActive = historyActive;
     cityLayer.setOpacity(dynastyActive || planner.isOpen() ? 0 : 0.9);
     // 光点在屏幕上的大小基本恒定：相机拉近时按比例缩小，避免加色光斑铺满屏幕
     const cameraDistance = camera.position.length();
@@ -1014,6 +1260,7 @@ async function boot() {
       provinceLayer.updateLabels(camera, window.innerWidth, window.innerHeight);
     }
     dynastyMode.update(now / 1000, state, date);
+    millennium?.update?.(now / 1000, state, date);
     applyAdaptiveQuality(delta);
 
     human.setEnergy(muted ? 0 : voice.level());
@@ -1021,7 +1268,9 @@ async function boot() {
     human.setNight(state.nightFactor);
     human.update(delta);
 
+    movieExport?.tick?.(now);
     renderer.render(scene, camera);
+    movieExport?.capture?.(now);
 
     // 重点城市标签先占位，城市图层再按同一套格子避让，两层标签不会叠在一起
     // 地名：全国视野下 34 个省级城市全部参与（按优先级占位，放不下才隐藏低优先级），
@@ -1154,6 +1403,44 @@ async function boot() {
     guideOpen: () => guide.open(),
     guideClose: () => guide.close(),
     guideReload: () => guide.reload(),
+    // ── 千年模式 / 开场 / 旅行电影（自动化验收用）──
+    intro: () => intro.debug(),
+    introSkip: () => intro.skip(),
+    introReplay: () => intro.start({ replay: true }),
+    millennium: () => millennium?.debug?.() || null,
+    millenniumOpen: (name) => {
+      const city = cities.find((item) => item.name === name) || findCity(cityIndex, name);
+      if (!city) return null;
+      millennium.open({ name: city.name, lng: city.lng, lat: city.lat });
+      return city.name;
+    },
+    millenniumEra: (index) => {
+      millennium.setEra(index);
+      return millennium.debug();
+    },
+    millenniumExit: () => millennium.close(),
+    millenniumStrata: (open) => {
+      millennium.toggleStrata(open);
+      return !document.getElementById('millennium-strata')?.classList.contains('hidden');
+    },
+    millenniumAsk: (text) => {
+      const input = document.getElementById('mc-input');
+      if (!input) return false;
+      input.value = text || '';
+      input.closest('.dc-row')?.querySelector('button')?.click();
+      return true;
+    },
+    millenniumCard: () => ({
+      ...(millennium?.debug?.() || {}),
+      title: document.getElementById('mc-title')?.textContent || '',
+      sub: document.getElementById('mc-sub')?.textContent || '',
+      log: (document.getElementById('mc-log')?.textContent || '').slice(-400),
+    }),
+    movie: () => movieExport?.debug?.() || null,
+    movieStart: (guideId) => {
+      movieExport.start(guideId);
+      return true;
+    },
     labelPriority: () => labelPriority.map((index) => ({
       name: cities[index].name,
       weight: keyTierWeight(cities[index].name),
@@ -1266,11 +1553,25 @@ async function boot() {
         cityLayerOpacity: Number((cityLayer.state.opacity || 0).toFixed(2)),
         provinceGroup: provinceLayer.group.visible,
       },
+      time: {
+        live: clockState.live,
+        override: clockState.override ? clockState.override.toISOString() : null,
+      },
     }),
   };
 
   ui.setLoading(false);
   requestAnimationFrame(frame);
+  // 开场：每次打开都播（2 秒后可跳过）；?intro=0 供自动化测试直接进沙盘
+  window.setTimeout(() => intro.start(), 320);
+  // 环境音需要一次用户手势才能出声（浏览器自动播放策略）
+  window.addEventListener(
+    'pointerdown',
+    () => {
+      ambience.start();
+    },
+    { once: true },
+  );
 }
 
 boot().catch((error) => {

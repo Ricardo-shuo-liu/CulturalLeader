@@ -19,7 +19,10 @@
   --hairline-strong: rgba(239, 230, 210, 0.26);
   --shadow-card: 0 18px 40px rgba(4, 8, 10, 0.42);
   --radius-card: 4px;
-  --serif: "Songti SC", "Noto Serif SC", "Source Han Serif SC", "STSong", serif;
+  --serif: "Noto Serif CJK SC", "Songti SC", "Noto Serif SC", "Source Han Serif SC", "STSong", serif;
+  --stone: #5b7f97;
+  --cinnabar: #a8402f;
+  --ochre: #a97c4f;
 }
 
 /* ── 纸面纹理：用极淡的噪点替代花哨渐变 ── */
@@ -1213,4 +1216,661 @@ body:not(.dynasty-mode) #dynasty-labels {
   color: var(--paper-faint);
   font-size: 11px;
   white-space: nowrap;
+}
+
+/* ─────────────────────────────────────────────────────────────
+   千年模式 · 开场 · 旅行电影（第一批改造）
+   设计语言延续纸墨底，但把「时间」做成主角：石青时间轴 + 地层抽屉 + 水墨转场。
+   ───────────────────────────────────────────────────────────── */
+
+/* 水墨晕染式出现：所有临时卡片共用 */
+@keyframes inkReveal {
+  0% {
+    opacity: 0;
+    clip-path: inset(0 100% 0 0);
+    filter: blur(2px);
+  }
+  55% {
+    opacity: 1;
+    filter: blur(0.5px);
+  }
+  100% {
+    opacity: 1;
+    clip-path: inset(0 0 0 0);
+    filter: blur(0);
+  }
+}
+
+#millennium-card:not(.hidden),
+#dynasty-card:not(.hidden),
+#city-card:not(.hidden),
+#movie-modal .movie-shell:not(.hidden) {
+  animation: inkReveal 0.44s cubic-bezier(0.2, 0.7, 0.3, 1) both;
+}
+
+/* ── 开场 ─────────────────────────────────────────────── */
+#intro {
+  position: fixed;
+  inset: 0;
+  z-index: 70;
+  pointer-events: none;
+}
+
+#intro.hidden {
+  display: none !important;
+}
+
+#intro-veil {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  background:
+    radial-gradient(ellipse at 50% 42%, rgba(244, 240, 230, 0.95) 0%, rgba(226, 224, 214, 0.85) 38%, rgba(13, 20, 24, 0.9) 100%);
+  transition: opacity 0.35s linear;
+}
+
+#intro-plate {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 11vh;
+  text-align: center;
+  color: var(--paper);
+  text-shadow: 0 2px 18px rgba(0, 0, 0, 0.8);
+  font-family: var(--serif);
+}
+
+#intro-title {
+  font-size: clamp(22px, 3.2vw, 40px);
+  letter-spacing: 0.42em;
+  text-indent: 0.42em;
+  opacity: 0.94;
+}
+
+#intro-sub {
+  margin-top: 14px;
+  min-height: 1.6em;
+  font-size: clamp(13px, 1.4vw, 17px);
+  letter-spacing: 0.28em;
+  color: var(--paper-dim);
+}
+
+#intro-skip {
+  position: absolute;
+  right: 26px;
+  bottom: 26px;
+  padding: 7px 16px;
+  border: 1px solid var(--hairline-strong);
+  border-radius: 2px;
+  background: rgba(13, 20, 24, 0.6);
+  color: var(--paper-dim);
+  font-family: var(--serif);
+  font-size: 13px;
+  letter-spacing: 2px;
+  cursor: pointer;
+  pointer-events: auto;
+}
+
+#intro-skip:hover {
+  border-color: var(--gold);
+  color: var(--gold);
+}
+
+#intro-skip.hidden {
+  display: none !important;
+}
+
+/* 开场期间让界面退场，只留舞台与数字人 */
+body.intro-mode #nav-toggle,
+body.intro-mode #timeboard,
+body.intro-mode #panel,
+body.intro-mode #city-card,
+body.intro-mode #dynasty-bar,
+body.intro-mode #millennium-bar,
+body.intro-mode #toast {
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.4s ease;
+}
+
+/* ── 千年模式 ──────────────────────────────────────────── */
+body.millennium-mode .city-label {
+  display: none !important;
+}
+
+#millennium-bar {
+  position: fixed;
+  left: 50%;
+  bottom: 18px;
+  transform: translateX(-50%);
+  z-index: 33;
+  width: min(1080px, 94vw);
+  padding: 10px 14px 12px;
+  border: 1px solid var(--hairline);
+  border-top: 2px solid var(--stone);
+  border-radius: 3px;
+  background: rgba(11, 17, 21, 0.9);
+  box-shadow: var(--shadow-card);
+  font-family: var(--serif);
+}
+
+#millennium-bar.hidden {
+  display: none !important;
+}
+
+#millennium-bar .mb-line {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: var(--paper-dim);
+  font-size: 12.5px;
+}
+
+#millennium-bar .mb-line strong {
+  color: var(--era-color, var(--gold));
+  font-size: 16px;
+  letter-spacing: 4px;
+}
+
+#millennium-bar .mb-position {
+  margin-left: auto;
+  color: var(--paper-faint);
+  font-size: 11.5px;
+  letter-spacing: 1px;
+}
+
+#millennium-bar button {
+  padding: 3px 10px;
+  border: 1px solid var(--hairline-strong);
+  border-radius: 2px;
+  background: transparent;
+  color: var(--paper);
+  font-family: var(--serif);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+#millennium-bar button:hover {
+  border-color: var(--stone);
+  color: #bcd6e4;
+}
+
+#millennium-strata-toggle.on {
+  border-color: var(--gold);
+  color: var(--gold);
+}
+
+/* 时间轴：11 期 chip，像一把横向的卷尺 */
+#millennium-timeline {
+  display: grid;
+  grid-template-columns: repeat(11, minmax(0, 1fr));
+  gap: 6px;
+  margin-top: 10px;
+}
+
+#millennium-timeline button {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding: 6px 2px 7px;
+  border: 1px solid var(--hairline);
+  border-radius: 2px;
+  background: rgba(255, 255, 255, 0.02);
+  color: var(--paper-dim);
+  cursor: pointer;
+  transition: border-color 0.2s ease, background 0.2s ease, transform 0.2s ease;
+}
+
+#millennium-timeline button:hover {
+  transform: translateY(-2px);
+  border-color: var(--era-color, var(--gold));
+}
+
+#millennium-timeline button.active {
+  border-color: var(--era-color, var(--gold));
+  background: linear-gradient(180deg, rgba(216, 180, 106, 0.16), rgba(216, 180, 106, 0.04));
+  box-shadow: 0 0 0 1px rgba(216, 180, 106, 0.25) inset;
+}
+
+#millennium-timeline button.empty .mt-ancient {
+  color: var(--paper-faint);
+}
+
+#millennium-timeline .mt-name {
+  font-size: 12.5px;
+  letter-spacing: 2px;
+  color: var(--paper);
+}
+
+#millennium-timeline .mt-ancient {
+  font-size: 10.5px;
+  letter-spacing: 1px;
+  color: var(--era-color, var(--gold-soft));
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* 锁定点的名牌与近旁地名 */
+#millennium-labels {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 22;
+}
+
+body:not(.millennium-mode) #millennium-labels {
+  display: none;
+}
+
+.millennium-label {
+  position: absolute;
+  left: 0;
+  top: 0;
+  display: none;
+  flex-direction: column;
+  align-items: center;
+  gap: 1px;
+  padding: 3px 10px 4px;
+  border: 1px solid rgba(239, 230, 210, 0.24);
+  border-radius: 2px;
+  background: rgba(13, 20, 24, 0.74);
+  color: var(--paper);
+  font-family: var(--serif);
+  line-height: 1.15;
+  white-space: nowrap;
+  cursor: pointer;
+  pointer-events: auto;
+}
+
+.millennium-label.primary {
+  border-color: rgba(242, 205, 132, 0.6);
+  background: rgba(13, 20, 24, 0.86);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
+}
+
+.millennium-label .ml-name {
+  font-size: 14.5px;
+  letter-spacing: 2.5px;
+}
+
+.millennium-label.primary .ml-name {
+  font-size: 16px;
+  color: #f7e3b6;
+}
+
+.millennium-label .ml-modern:empty {
+  display: none;
+}
+
+.millennium-label .ml-modern {
+  color: var(--paper-faint);
+  font-size: 10px;
+  letter-spacing: 1px;
+}
+
+.millennium-label.minor {
+  padding: 1px 6px 2px;
+  background: rgba(13, 20, 24, 0.44);
+}
+
+.millennium-label.minor .ml-name {
+  font-size: 11.5px;
+  color: rgba(224, 232, 236, 0.75);
+}
+
+/* 换期时的水汽转场 */
+#millennium-veil {
+  position: fixed;
+  inset: 0;
+  z-index: 24;
+  opacity: 0;
+  pointer-events: none;
+  background:
+    radial-gradient(ellipse at 50% 55%, rgba(233, 228, 214, 0.5) 0%, rgba(24, 33, 38, 0.55) 62%, rgba(10, 15, 18, 0.6) 100%);
+  transition: opacity 0.26s ease;
+}
+
+#millennium-veil.show {
+  opacity: 1;
+}
+
+/* 千年卡片：沿用朝代卡的版式，位置让给左下角 */
+#millennium-card {
+  position: fixed;
+  left: 22px;
+  top: 84px;
+  z-index: 34;
+  width: min(400px, 92vw);
+  max-height: calc(100vh - 220px);
+  display: flex;
+  flex-direction: column;
+  padding: 14px 16px 12px;
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-card);
+  background: rgba(13, 20, 24, 0.92);
+  box-shadow: var(--shadow-card);
+  font-family: var(--serif);
+  overflow: hidden;
+}
+
+#millennium-card.hidden {
+  display: none !important;
+}
+
+#millennium-card header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--hairline);
+}
+
+#millennium-card #mc-title {
+  color: var(--paper);
+  font-size: 18px;
+  letter-spacing: 2px;
+}
+
+#millennium-card #mc-sub {
+  margin-top: 3px;
+  color: var(--paper-dim);
+  font-size: 12px;
+}
+
+#millennium-card #mc-close {
+  padding: 2px 8px;
+  border: 1px solid var(--hairline);
+  border-radius: 2px;
+  background: transparent;
+  color: var(--paper-dim);
+  cursor: pointer;
+}
+
+#mc-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding-top: 10px;
+}
+
+.dc-poems {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-top: 10px;
+}
+
+/* 历史地层：一期一层的抽屉 */
+#millennium-strata {
+  position: fixed;
+  right: 22px;
+  top: 84px;
+  z-index: 34;
+  width: min(360px, 92vw);
+  max-height: calc(100vh - 220px);
+  display: flex;
+  flex-direction: column;
+  padding: 12px 14px;
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-card);
+  background: rgba(11, 17, 21, 0.9);
+  box-shadow: var(--shadow-card);
+  font-family: var(--serif);
+  animation: inkReveal 0.4s ease both;
+}
+
+#millennium-strata.hidden {
+  display: none !important;
+}
+
+#millennium-strata header {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--hairline);
+  color: var(--paper);
+}
+
+#millennium-strata header .muted {
+  flex: 1;
+  color: var(--paper-faint);
+  font-size: 11px;
+}
+
+#millennium-strata header button {
+  padding: 2px 8px;
+  border: 1px solid var(--hairline);
+  border-radius: 2px;
+  background: transparent;
+  color: var(--paper-dim);
+  cursor: pointer;
+}
+
+#millennium-strata-list {
+  margin-top: 8px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column-reverse; /* 越古越靠下，像地层剖面 */
+  gap: 6px;
+}
+
+.millennium-layer {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 8px 10px;
+  border: 1px solid var(--hairline);
+  border-left: 3px solid var(--stone);
+  border-radius: 2px;
+  background: linear-gradient(90deg, rgba(91, 127, 151, 0.14), rgba(255, 255, 255, 0.02));
+  color: var(--paper-dim);
+  text-align: left;
+  cursor: pointer;
+  font-family: var(--serif);
+  animation: inkReveal 0.5s ease both;
+}
+
+.millennium-layer:hover {
+  border-left-color: var(--gold);
+}
+
+.millennium-layer.active {
+  border-left-color: var(--gold);
+  background: linear-gradient(90deg, rgba(216, 180, 106, 0.18), rgba(255, 255, 255, 0.03));
+}
+
+.millennium-layer.empty {
+  opacity: 0.6;
+}
+
+.millennium-layer .mlr-title {
+  color: var(--paper-faint);
+  font-size: 11px;
+  letter-spacing: 1px;
+}
+
+.millennium-layer .mlr-name {
+  color: var(--paper);
+  font-size: 15px;
+  letter-spacing: 2px;
+}
+
+.millennium-layer .mlr-line {
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--paper-dim);
+}
+
+/* ── 旅行电影 ──────────────────────────────────────────── */
+body.movie-mode #nav-toggle,
+body.movie-mode #timeboard,
+body.movie-mode #panel,
+body.movie-mode #live2d-stage,
+body.movie-mode #city-card,
+body.movie-mode #guide,
+body.movie-mode #planner,
+body.movie-mode #import-wizard,
+body.movie-mode #drawer,
+body.movie-mode #drawer-backdrop,
+body.movie-mode #route-panel,
+body.movie-mode #playback-bar,
+body.movie-mode #dynasty-bar,
+body.movie-mode #millennium-bar,
+body.movie-mode #millennium-labels,
+body.movie-mode #labels,
+body.movie-mode #toast {
+  opacity: 0 !important;
+  pointer-events: none !important;
+}
+
+#movie-modal {
+  position: fixed;
+  inset: 0;
+  z-index: 68;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(5, 8, 10, 0.72);
+  backdrop-filter: blur(4px);
+}
+
+#movie-modal.hidden {
+  display: none !important;
+}
+
+.movie-shell {
+  width: min(880px, 94vw);
+  max-height: 88vh;
+  display: flex;
+  flex-direction: column;
+  padding: 14px 16px 16px;
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-card);
+  background: rgba(11, 17, 21, 0.94);
+  box-shadow: var(--shadow-card);
+  font-family: var(--serif);
+}
+
+.movie-shell header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--hairline);
+}
+
+.movie-shell header strong {
+  color: var(--paper);
+  letter-spacing: 2px;
+}
+
+.movie-shell header .movie-spacer {
+  flex: 1;
+}
+
+.movie-shell header button {
+  padding: 3px 10px;
+  border: 1px solid var(--hairline-strong);
+  border-radius: 2px;
+  background: transparent;
+  color: var(--paper-dim);
+  font-family: var(--serif);
+  cursor: pointer;
+}
+
+.movie-shell header button:hover {
+  border-color: var(--gold);
+  color: var(--gold);
+}
+
+.movie-bar {
+  height: 3px;
+  margin-top: 10px;
+  border-radius: 2px;
+  background: rgba(255, 255, 255, 0.08);
+  overflow: hidden;
+}
+
+#movie-progress {
+  width: 0;
+  height: 100%;
+  background: linear-gradient(90deg, var(--stone), var(--gold));
+  transition: width 0.4s ease;
+}
+
+#movie-live {
+  margin-top: 12px;
+}
+
+#movie-live.hidden {
+  display: none !important;
+}
+
+#movie-live canvas {
+  width: 100%;
+  height: auto;
+  border: 1px solid var(--hairline);
+  border-radius: 2px;
+}
+
+#movie-result {
+  margin-top: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+#movie-result.hidden {
+  display: none !important;
+}
+
+#movie-video {
+  width: 100%;
+  border: 1px solid var(--hairline);
+  border-radius: 2px;
+  background: #000;
+}
+
+.movie-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.movie-download {
+  padding: 6px 14px;
+  border: 1px solid var(--gold-soft);
+  border-radius: 2px;
+  color: var(--gold);
+  text-decoration: none;
+  font-size: 13px;
+  letter-spacing: 1px;
+}
+
+.movie-download:hover {
+  border-color: var(--gold);
+  background: rgba(216, 180, 106, 0.08);
+}
+
+/* 抽屉里的城市卡两个按钮并排 */
+#city-card #city-card-millennium {
+  margin-left: 8px;
+  padding: 7px 14px;
+  border: 1px solid var(--hairline-strong);
+  border-radius: 2px;
+  background: transparent;
+  color: var(--paper);
+  font-family: var(--serif);
+  cursor: pointer;
+}
+
+#city-card #city-card-millennium:hover {
+  border-color: var(--gold);
+  color: var(--gold);
 }

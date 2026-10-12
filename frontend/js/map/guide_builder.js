@@ -337,6 +337,7 @@ export function createGuideBuilder({ onSpeak, onPlay } = {}) {
     open,
     close,
     openGuide,
+    currentId: () => state.guide?.id || null,
     isOpen: () => Boolean(root) && !root.classList.contains('hidden'),
     reload: async () => {
       await loadLibrary();

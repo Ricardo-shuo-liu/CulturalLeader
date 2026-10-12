@@ -168,7 +168,7 @@ def main() -> int:
 
     try:
         # ── 1. 沙盘加载 ──
-        driver.get(f"{BASE}/")
+        driver.get(f"{BASE}/?intro=0")
         time.sleep(7)
         layer = driver.execute_script("return window.__cl.cityLayer()")
         check("沙盘城市图层", (layer.get("total") or 0) >= 300, f"{layer.get('total')} 城 · {layer.get('level')}")
@@ -756,7 +756,7 @@ def main() -> int:
             driver.save_screenshot(str(OUT / "12_share.png"))
 
         # ── 8b. 抄作业：粘贴正文 → 三步向导 → 生成计划块与草稿攻略 ──
-        driver.get(f"{BASE}/")
+        driver.get(f"{BASE}/?intro=0")
         time.sleep(6)
         driver.execute_script("window.__cl.importOpen(); return true;")
         time.sleep(1)
@@ -843,7 +843,7 @@ def main() -> int:
         time.sleep(1)
 
         # ── 9. 降级路径：无 JS Key 时的自建矢量底图也要能拖拽/缩放/选中 ──
-        driver.get(f"{BASE}/?map=canvas")
+        driver.get(f"{BASE}/?intro=0&map=canvas")
         time.sleep(6)
         # 洛阳已经是重点城市（有 DOM 标签），双击标签同样要进流程编辑
         opened_fallback = driver.execute_script(

@@ -1,8 +1,11 @@
-"""整体攻略接口：把多城流程组合成逐日攻略，支持调整、替换、导出与只读分享。"""
+"""整体攻略接口：把多城流程组合成逐日攻略，支持调整、替换、导出、只读分享与分享二维码。"""
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Body, HTTPException
+import io
+
+from fastapi import APIRouter, Body, HTTPException, Request
+from fastapi.responses import Response
 from pydantic import BaseModel, Field
 
 from ..config import get_settings
@@ -95,6 +98,36 @@ def share_guide(guide_id: str) -> dict:
     except guide_store.GuideNotFound as error:
         raise HTTPException(status_code=404, detail=str(error)) from error
     return {"token": token, "path": f"/share/{token}"}
+
+
+@router.get("/{guide_id}/share-qr.png")
+def share_qr(guide_id: str, request: Request) -> Response:
+    """分享页二维码：旅行电影的封尾卡把它画进画面，观众扫码回看整份行程。"""
+
+    try:
+        token = guide_store.ensure_share_token(guide_id)
+    except guide_store.GuideNotFound as error:
+        raise HTTPException(status_code=404, detail=str(error)) from error
+    base = str(request.base_url).rstrip("/")
+    url = f"{base}/share/{token}"
+    try:
+        import qrcode  # 延迟导入：没装 qrcode 时只影响这一个接口
+    except ImportError as error:  # pragma: no cover - 依赖缺失时的兜底
+        raise HTTPException(
+            status_code=501,
+            detail="未安装二维码依赖：pip install qrcode 后重启服务",
+        ) from error
+    image = qrcode.make(url)
+    buffer = io.BytesIO()
+    try:
+        image.save(buffer, format="PNG")
+    except TypeError:  # pragma: no cover - 无 Pillow 时 qrcode 退回 pypng 工厂
+        image.save(buffer)
+    return Response(
+        content=buffer.getvalue(),
+        media_type="image/png",
+        headers={"Cache-Control": "no-store", "X-Share-Url": url},
+    )
 
 
 @router.post("/{guide_id}/flows/{flow_id}")

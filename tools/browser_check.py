@@ -19,7 +19,9 @@ from selenium.webdriver.firefox.service import Service
 BASE = "http://127.0.0.1:8000"
 ROOT = Path(__file__).resolve().parents[1]
 OUT = ROOT / "tests_artifacts"
-GECKODRIVER = "/snap/bin/geckodriver"
+# 本机是 snap 版 Firefox：直接用 snap 内的 geckodriver / 浏览器二进制最稳（/snap/bin 的包装脚本会起不来）
+GECKODRIVER = "/snap/firefox/current/usr/lib/firefox/geckodriver"
+FIREFOX_BINARY = "/snap/firefox/current/usr/lib/firefox/firefox"
 
 
 HIDE_SCRIPT = """
@@ -50,7 +52,9 @@ def make_driver() -> webdriver.Firefox:
     options.add_argument("--height=900")
     options.set_preference("webgl.disabled", False)
     options.set_preference("webgl.force-enabled", True)
-    service = Service(executable_path=GECKODRIVER)
+    if Path(FIREFOX_BINARY).exists():
+        options.binary_location = FIREFOX_BINARY
+    service = Service(executable_path=GECKODRIVER if Path(GECKODRIVER).exists() else "/snap/bin/geckodriver")
     return webdriver.Firefox(options=options, service=service)
 
 
@@ -91,7 +95,7 @@ def main() -> int:
     try:
         driver.set_window_size(1600, 900)
 
-        driver.get(f"{BASE}/?t=06:30")
+        driver.get(f"{BASE}/?intro=0&t=06:30")
         time.sleep(7)
         labels = driver.execute_script("return document.querySelectorAll('.city-label[data-slug]').length") or 0
         gl = driver.execute_script(
@@ -107,12 +111,12 @@ def main() -> int:
         dawn = OUT / "01_dawn_0630.png"
         clean_shot(driver, dawn)
 
-        driver.get(f"{BASE}/?t=23:00")
+        driver.get(f"{BASE}/?intro=0&t=23:00")
         time.sleep(6)
         night = OUT / "02_night_2300.png"
         clean_shot(driver, night)
 
-        driver.get(f"{BASE}/?t=12:00")
+        driver.get(f"{BASE}/?intro=0&t=12:00")
         time.sleep(6)
         noon = OUT / "03_noon_1200.png"
         clean_shot(driver, noon)
@@ -148,7 +152,7 @@ def main() -> int:
         clean_shot(driver, opened)
 
         # 路线规划：先回到初始视角，再进入模式 → 点五个城市标签 → LKH 求解 → 截图
-        driver.get(f"{BASE}/?t=12:00")
+        driver.get(f"{BASE}/?intro=0&t=12:00")
         time.sleep(5)
         driver.find_element("id", "nav-toggle").click()
         time.sleep(0.5)
@@ -200,7 +204,7 @@ def main() -> int:
         view_province = driver.execute_script("return window.__cl.cityLayer()")
 
         # 点击省份区块 → 飞到该省
-        driver.get(f"{BASE}/?t=12:00")
+        driver.get(f"{BASE}/?intro=0&t=12:00")
         time.sleep(6)
         before_click = driver.execute_script("return window.__cl.cityLayer()")
         driver.execute_script(
@@ -225,6 +229,9 @@ def main() -> int:
         l2d_pixels = driver.execute_script("return window.__cl.humanMeasure()")
 
         # 口型驱动验证：走真实链路——打开城市让数字人播报，轮询口型参数
+        # 先点一下画面：浏览器要求用户手势后才允许音频上下文恢复（headless 下尤其明显）
+        driver.find_element("tag name", "canvas").click()
+        time.sleep(0.4)
         driver.execute_script("window.__cl.openCity('shanghai')")
         mouth_values = []
         mouth_probe = {}

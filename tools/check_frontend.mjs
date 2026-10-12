@@ -681,6 +681,139 @@ check('穿越：驿道光带按最近邻连边（每点至少一条、无重复�
   return `${points.length} 点 → ${edges.length} 条连线`;
 });
 
+// ── 千年 · 开场运镜 · 旅行电影（新增模块的纯逻辑）────────────────────
+
+const cameraTrack = await import(path.join(root, 'frontend/js/camera_track.js'));
+const millennium = await import(path.join(root, 'frontend/js/map/millennium.js'));
+const movieExport = await import(path.join(root, 'frontend/js/map/movie_export.js'));
+const audioAssets = await import(path.join(root, 'frontend/js/audio_assets.js'));
+
+check('环境音：Karplus-Strong 拨弦有衰减、有能量、长度正确', () => {
+  const sampleRate = 22050;
+  const wave = audioAssets.pluck(sampleRate, 220, 2);
+  assert.equal(wave.length, sampleRate * 2);
+  const head = wave.slice(0, 2000).reduce((sum, value) => sum + Math.abs(value), 0) / 2000;
+  const tail = wave.slice(-2000).reduce((sum, value) => sum + Math.abs(value), 0) / 2000;
+  assert.ok(head > 0.01, `起始段应有能量，实际 ${head}`);
+  assert.ok(tail < head, `尾段应衰减（${tail} < ${head}）`);
+  return `起始能量 ${head.toFixed(3)} → 尾部 ${tail.toFixed(3)}（220Hz / 2s）`;
+});
+
+check('运镜：关键帧采样起点/终点/中段缓动都对', () => {
+  const track = cameraTrack.createCameraTrack([
+    { t: 0, position: [0, 14, 17], target: [0, 0, 0] },
+    { t: 4, position: [0, 4, 5], target: [0, 0.1, 0], ease: 'linear' },
+    { t: 8, position: [1, 2, 2], target: [0.5, 0.1, 0], via: [0, 0.5, 6] },
+  ]);
+  assert.equal(track.duration, 8);
+  assert.deepEqual(track.sample(0).position, [0, 14, 17]);
+  const mid = track.sample(2);
+  assert.ok(Math.abs(mid.position[1] - 9) < 1e-6, '线性段中点是 9');
+  const end = track.sample(20);
+  assert.deepEqual(end.position, [1, 2, 2]);
+  assert.equal(end.done, true);
+  const curved = track.sample(6).position;
+  assert.ok(curved[2] > 3, `贝塞尔段应被控制点拉高，实际 z=${curved[2]}`);
+  return `时长 ${track.duration}s · 端点/缓动/贝塞尔全部正确`;
+});
+
+check('千年：代表时刻换算成北京时间 Date（现代为实时）', () => {
+  const date = millennium.eraLightingDate('06-22T19:40', new Date('2026-01-01T00:00:00Z'));
+  assert.equal(date.getUTCFullYear(), 2026);
+  assert.equal(date.getUTCMonth() + 1, 6);
+  assert.equal(date.getUTCDate(), 22);
+  assert.equal(date.getUTCHours(), 11, '19:40 北京时 = 11:40 UTC');
+  assert.equal(date.getUTCMinutes(), 40);
+  assert.equal(millennium.eraLightingDate(null), null);
+  return `${date.toISOString()}（现代一期为 null → 走实时）`;
+});
+
+check('千年：近旁地名按 30km 过滤、主地名优先，改名链去重', () => {
+  const places = [
+    { id: 'a', ancient: '长安', modern: '西安', lng: 108.94, lat: 34.34 },
+    { id: 'b', ancient: '咸阳', modern: '咸阳', lng: 108.71, lat: 34.33 },
+    { id: 'c', ancient: '洛阳', modern: '洛阳', lng: 112.45, lat: 34.62 },
+    { id: 'd', ancient: '栎阳', modern: '西安阎良', lng: 109.22, lat: 34.66, minor: true },
+  ];
+  // 30km：咸阳（约 21km）在内、西安阎良（约 44km）在外；放宽到 50km 两个都进
+  const near = millennium.nearbyPlaces(places, 108.94, 34.34, { km: 30 });
+  assert.deepEqual(
+    near.map((place) => place.id),
+    ['a', 'b'],
+    '30km 内应有西安与咸阳（洛阳与阎良都在外）',
+  );
+  const wider = millennium.nearbyPlaces(places, 108.94, 34.34, { km: 50 });
+  assert.deepEqual(wider.map((place) => place.id), ['a', 'b', 'd'], '主地名先、次级地名后');
+  const excluded = millennium.nearbyPlaces(places, 108.94, 34.34, { km: 30, excludeId: 'a' });
+  assert.deepEqual(excluded.map((place) => place.id), ['b']);
+
+  const eras = [
+    { matched: true, source: 'curated', place: { ancient: '内史' } },
+    { matched: true, source: 'near', place: { ancient: '咸阳' } },
+    { matched: true, source: 'exact', place: { ancient: '长安' } },
+    { matched: true, source: 'exact', place: { ancient: '长安' } },
+    { matched: false, place: null },
+  ];
+  assert.deepEqual(millennium.nameChain(eras), ['内史', '长安'], '就近参考不入选，重复名去重');
+  return `近旁 ${near.length} 处 · 改名链 ${millennium.nameChain(eras).join('→')}`;
+});
+
+check('千年：payload 校验能挡下缺时期/缺古名的数据', () => {
+  const good = {
+    counts: { matched: 2 },
+    eras: Array.from({ length: 11 }, (item, index) => ({
+      key: `k${index}`,
+      name: `时期${index}`,
+      period: 'x',
+      matched: index < 2,
+      source: index < 2 ? 'exact' : null,
+      place: index < 2 ? { ancient: `古名${index}` } : null,
+      note: index < 2 ? '' : '此朝此地暂无记载',
+    })),
+  };
+  const detail = millennium.validateMillenniumPayload(good);
+  assert.equal(detail.eras, 11);
+  assert.throws(() => millennium.validateMillenniumPayload({ eras: [] }), /时期数量/);
+  const bad = JSON.parse(JSON.stringify(good));
+  bad.eras[0].place = null;
+  assert.throws(() => millennium.validateMillenniumPayload(bad), /没有古名|缺古名|匹配了/);
+  return `11 期校验通过 · 异常数据被拦下`;
+});
+
+check('电影：脚本包含天数/点位/旁白，总时长压缩到 72 秒内', () => {
+  const guide = {
+    name: '三日游',
+    totals: { distance_km: 123.4, minutes: 900 },
+    items: Array.from({ length: 4 }, (item, index) => ({ day: index + 1, flowId: `flow-${index}` })),
+  };
+  const flows = {};
+  guide.items.forEach((item, index) => {
+    flows[item.flowId] = {
+      city: { name: ['西安', '成都', '杭州', '北京'][index], lng: 108.94, lat: 34.34 },
+      points: [
+        { id: 'p1', name: '钟楼', lng: 108.94, lat: 34.34 },
+        { id: 'p2', name: '城墙', lng: 108.95, lat: 34.34 },
+      ],
+      plan: {
+        timeline: [
+          { id: 'p1', name: '钟楼', arrive_text: '09:00' },
+          { id: 'p2', name: '城墙', arrive_text: '11:00' },
+        ],
+      },
+    };
+  });
+  const script = movieExport.buildMovieScript(guide, flows);
+  assert.equal(script.days.length, 4);
+  assert.equal(script.days[0].title, '第 1 天 · 西安');
+  assert.ok(script.days[0].narration.includes('钟楼'), '旁白要点名点位');
+  assert.ok(script.days[0].stops.length === 2);
+  assert.ok(script.duration > 0 && script.duration <= 72, `时长 ${script.duration}`);
+  const timeline = movieExport.movieTimeline(script);
+  assert.equal(timeline.at(-1).kind, 'end');
+  assert.ok(Math.abs(timeline.at(-1).end - script.duration) < 1e-6, '时间轴总和应等于脚本时长');
+  return `${script.days.length} 天 · ${Math.round(script.duration)}s · 旁白「${script.days[0].narration.slice(0, 18)}…」`;
+});
+
 let failed = 0;
 for (const item of results) {
   const mark = item.ok ? 'PASS' : 'FAIL';

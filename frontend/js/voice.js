@@ -81,14 +81,21 @@ export class VoiceIO {
     return this.consumeStream(response, sessionId);
   }
 
-  /** 穿越对话：与指定朝代的数字人聊天，可带地点或诗词上下文，SSE 结构同城市对话。 */
-  async askDynasty(dynastyKey, { placeId = null, poemId = null, message = '', sessionId = null } = {}) {
+  /** 穿越对话：与指定朝代的数字人聊天，可带地点或诗词上下文，SSE 结构同城市对话。
+   *  anchor 供千年模式使用：把「锁定在哪一个点上」写进提示词，让数字人站在此时此地说话。 */
+  async askDynasty(dynastyKey, { placeId = null, poemId = null, message = '', sessionId = null, anchor = null } = {}) {
     this.abortController?.abort();
     this.abortController = new AbortController();
     const response = await fetch(`/api/dynasty/${encodeURIComponent(dynastyKey)}/chat`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ message, place_id: placeId, poem_id: poemId, session_id: sessionId || null }),
+      body: JSON.stringify({
+        message,
+        place_id: placeId,
+        poem_id: poemId,
+        session_id: sessionId || null,
+        anchor: anchor || null,
+      }),
       signal: this.abortController.signal,
     });
     if (!response.ok || !response.body) {

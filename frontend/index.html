@@ -21,6 +21,15 @@
     <div id="vignette" aria-hidden="true"></div>
     <div id="labels" aria-hidden="true"></div>
 
+    <div id="intro" class="hidden">
+      <div id="intro-veil"></div>
+      <div id="intro-plate">
+        <div id="intro-title">你和这片土地的故事</div>
+        <div id="intro-sub"></div>
+      </div>
+      <button id="intro-skip" class="hidden" type="button">跳过开场 →</button>
+    </div>
+
     <div id="dynasty-bar" class="hidden">
       <button id="dynasty-prev" type="button" title="上一个时期">◀</button>
       <span id="dynasty-bar-name">唐</span>
@@ -30,6 +39,39 @@
     </div>
     <div id="dynasty-tip" class="hidden" aria-hidden="true"></div>
     <div id="dynasty-labels" aria-hidden="true"></div>
+
+    <div id="millennium-bar" class="hidden">
+      <div class="mb-line">
+        <button id="millennium-prev" type="button" title="上一个时期">◀</button>
+        <strong id="millennium-era-name">唐</strong>
+        <span id="millennium-era-meta"></span>
+        <span id="millennium-position" class="mb-position"></span>
+        <button id="millennium-next" type="button" title="下一个时期">▶</button>
+        <button id="millennium-strata-toggle" type="button">历史地层</button>
+        <button id="millennium-exit" type="button">返回沙盘</button>
+      </div>
+      <div id="millennium-timeline"></div>
+    </div>
+    <div id="millennium-labels" aria-hidden="true"></div>
+    <div id="millennium-veil"></div>
+    <aside id="millennium-card" class="glass hidden">
+      <header>
+        <div>
+          <strong id="mc-title">古名</strong>
+          <div id="mc-sub" class="muted"></div>
+        </div>
+        <button id="mc-close" type="button">✕</button>
+      </header>
+      <div id="mc-body"></div>
+    </aside>
+    <aside id="millennium-strata" class="hidden">
+      <header>
+        <strong>历史地层</strong>
+        <span class="muted">一期一层，点击跳转</span>
+        <button id="millennium-strata-close" type="button">✕</button>
+      </header>
+      <div id="millennium-strata-list"></div>
+    </aside>
 
 
 
@@ -46,6 +88,7 @@
           <div class="panel-meta"><span id="panel-province"></span> <span id="panel-tags"></span></div>
         </div>
         <div class="panel-head-actions">
+          <button id="panel-millennium" class="ghost-btn" type="button" title="锁定这座城市，看它两千年的样子">千年</button>
           <button id="panel-plan" class="ghost-btn" type="button" title="进入这座城市的流程编辑">规划这座城市</button>
           <button id="panel-close" class="ghost-btn" type="button">合拢幕布</button>
         </div>
@@ -90,6 +133,7 @@
       </header>
       <div id="city-card-meta" class="muted"></div>
       <button id="city-card-enter" type="button" class="primary">进入流程编辑</button>
+      <button id="city-card-millennium" type="button">一块土地的千年</button>
     </div>
 
     <aside id="dynasty-card" class="glass hidden">
@@ -219,6 +263,7 @@
         <button id="guide-new" type="button">新建</button>
         <button id="guide-import" type="button">导入攻略（抄作业）</button>
         <button id="guide-play" type="button" class="primary">▶ 播放整份攻略</button>
+        <button id="guide-movie" type="button">导出旅行电影</button>
         <button id="guide-save" type="button">重新计算</button>
         <button id="guide-export" type="button">导出 JSON</button>
         <button id="guide-share" type="button">分享链接</button>
@@ -382,12 +427,41 @@
       </section>
 
       <section class="drawer-section">
+        <h4>开场与环境音</h4>
+        <button id="intro-replay" class="drawer-btn" type="button">重播开场</button>
+        <label class="drawer-label" for="ambience-volume">环境音音量</label>
+        <input id="ambience-volume" type="range" min="0" max="100" value="70" />
+        <p class="drawer-note" id="ambience-note">风声、水声与古琴；数字人说话时会自动压低环境音。</p>
+      </section>
+
+      <section class="drawer-section">
         <h4>操作说明</h4>
         <div id="hint">
           拖动旋转 · 滚轮缩放（放大到省级会显示该省城市）· 右键平移 · 双击城市进入流程编辑 · 单击重点城市看 3D · 点击省份飞到该省
         </div>
       </section>
     </aside>
+
+    <div id="movie-modal" class="hidden">
+      <div class="movie-shell glass">
+        <header>
+          <strong>旅行电影</strong>
+          <span id="movie-status" class="muted">准备中…</span>
+          <span class="movie-spacer"></span>
+          <button id="movie-cancel" type="button">取消导出</button>
+          <button id="movie-close" type="button">关闭</button>
+        </header>
+        <div class="movie-bar"><div id="movie-progress"></div></div>
+        <div id="movie-live" class="hidden"></div>
+        <div id="movie-result" class="hidden">
+          <video id="movie-video" controls playsinline></video>
+          <div class="movie-actions">
+            <a id="movie-download" class="movie-download" download>下载视频（WebM）</a>
+            <span class="muted">微信发送或转成 MP4：可用格式转换工具，或让后端接入 ffmpeg</span>
+          </div>
+        </div>
+      </div>
+    </div>
 
     <div id="toast"></div>
     <div id="loading">正在铺陈幕布…</div>

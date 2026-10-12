@@ -83,7 +83,7 @@ def main() -> int:
         )
 
     try:
-        driver.get(f"{BASE}/")
+        driver.get(f"{BASE}/?intro=0")
         for _ in range(40):
             if driver.execute_script("return Boolean(window.__cl)"):
                 break

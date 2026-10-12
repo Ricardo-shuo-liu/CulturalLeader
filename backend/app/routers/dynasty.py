@@ -1,11 +1,11 @@
-"""穿越系统：朝代清单 / 朝代详情 / 与数字人的朝代对话（SSE）。"""
+"""穿越系统：朝代清单 / 朝代详情 / 千年聚合 / 与数字人的朝代对话（SSE）。"""
 
 from __future__ import annotations
 
 import uuid
 from collections.abc import AsyncIterator
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 from sqlalchemy import select
@@ -13,6 +13,7 @@ from sqlalchemy.orm import Session
 
 from ..config import get_settings
 from ..data import dynasties as dynasty_data
+from ..data import millennium as millennium_data
 from ..db import SessionLocal, get_db
 from ..models import ChatSession, Message
 from ..services.fay_human import build_audio_message, tts_url_for
@@ -27,12 +28,25 @@ class DynastyChatRequest(BaseModel):
     place_id: str | None = None
     poem_id: str | None = None
     session_id: str | None = None
+    # 千年模式：锁定一个地点 + 当期古名，让数字人始终站在「此时此地」说话
+    anchor: str | None = Field(default=None, max_length=120)
 
 
 @router.get("/list")
 def list_dynasties() -> dict:
     items = dynasty_data.dynasty_list()
     return {"count": len(items), "dynasties": items}
+
+
+@router.get("/millennium")
+def millennium(
+    name: str = Query(min_length=2, max_length=24),
+    lng: float = Query(ge=70, le=140),
+    lat: float = Query(ge=15, le=55),
+) -> dict:
+    """一块土地的千年：锁定一个今名与坐标，逐期返回这里当时叫什么、是什么地方。"""
+
+    return millennium_data.build_payload(name.strip(), lng, lat)
 
 
 @router.get("/{key}")
@@ -87,7 +101,7 @@ async def dynasty_chat(key: str, payload: DynastyChatRequest, db: Session = Depe
     ][::-1]
     history = history[:-1] if history else []
 
-    system_prompt = dynasty_data.build_system_prompt(dynasty, place=place, poem=poem)
+    system_prompt = dynasty_data.build_system_prompt(dynasty, place=place, poem=poem, anchor=payload.anchor)
     speaker = dynasty
 
     async def event_stream() -> AsyncIterator[str]:
