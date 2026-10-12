@@ -166,7 +166,7 @@ export function buildLandMask(rings, width = 512, height = 288) {
   };
 }
 
-const TERRAIN_VERTEX = /* glsl */ `
+export const TERRAIN_VERTEX = /* glsl */ `
   attribute float aLng;
   attribute float aLat;
   attribute float aLand;
@@ -193,9 +193,15 @@ const TERRAIN_VERTEX = /* glsl */ `
   }
 `;
 
-const TERRAIN_FRAGMENT = /* glsl */ `
+/**
+ * 浮雕地形的片元着色器：默认就是沙盘本身；千年模式通过在 alpha 之后注入一段
+ * 「疆域遮罩」代码（maskApply）复用同一套日照与配色，不必重建网格。
+ */
+export function terrainFragmentSource({ maskHeader = '', maskApply = '' } = {}) {
+  return /* glsl */ `
   ${NOISE_GLSL}
   ${SOLAR_GLSL}
+  ${maskHeader}
 
   uniform vec3 uLand;
   uniform vec3 uLandHigh;
@@ -264,10 +270,14 @@ const TERRAIN_FRAGMENT = /* glsl */ `
     float landAlpha = clamp(vLand * 1.25, 0.0, 1.0);
     float reliefAlpha = smoothstep(0.03, 0.3, heightRatio);
     float alpha = max(landAlpha, reliefAlpha) * uOpacity;
+    ${maskApply}
 
     gl_FragColor = vec4(color, clamp(alpha, 0.0, 1.0));
   }
 `;
+}
+
+const TERRAIN_FRAGMENT = terrainFragmentSource();
 
 /**
  * 生成浮雕地形。

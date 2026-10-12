@@ -154,6 +154,7 @@ export function createMovieExport({
   controls,
   ui,
   cityBridge,
+  musicUrls = [],
   setSceneDate,
   setSceneLive,
   onFinish = () => {},
@@ -228,14 +229,15 @@ export function createMovieExport({
   }
 
   async function loadMusic() {
-    for (const url of ['/assets/audio/guqin.webm', '/assets/audio/guqin.ogg', '/assets/audio/guqin.mp3']) {
+    for (const url of musicUrls) {
+      if (!url) continue;
       try {
         const response = await fetch(url);
         if (!response.ok) continue;
         const data = await response.arrayBuffer();
         return await state.audio.ctx.decodeAudioData(data);
       } catch (error) {
-        /* 试下一个 */
+        /* 试下一个候选 */
       }
     }
     // 没有素材就用程序化古琴当配乐（同一套合成器，音色淡、不抢旁白）

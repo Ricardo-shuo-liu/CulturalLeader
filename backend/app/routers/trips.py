@@ -89,7 +89,31 @@ def public_config() -> dict:
             "把 TTS_BASE_URL / TTS_API_KEY 指向支持 TTS 的服务（如 OpenAI、Azure 兼容层），"
             "或使用浏览器语音（Linux 需安装 speech-dispatcher / espeak-ng）"
         ),
+        # 云端语音就绪时不允许退回系统语音（espeak 念中文像逐字拼读，观感很差）
+        "allow_browser_voice": not settings.tts_ready,
+        # 环境音素材清单：前端按清单加载，缺文件就用程序化合成，不再逐个探测产生 404
+        "ambience": _ambience_manifest(),
     }
+
+
+AMB_EXTENSIONS = ("webm", "ogg", "mp3")
+
+
+def _ambience_manifest() -> dict:
+    """扫描 frontend/assets/audio/，返回风/水/古琴三种环境音的可选 URL（没有则为 None）。"""
+
+    from ..config import FRONTEND_DIR
+
+    base = FRONTEND_DIR / "assets" / "audio"
+    manifest: dict[str, str | None] = {}
+    for slot in ("wind", "water", "guqin"):
+        manifest[slot] = None
+        for extension in AMB_EXTENSIONS:
+            candidate = base / f"{slot}.{extension}"
+            if candidate.exists():
+                manifest[slot] = f"/assets/audio/{candidate.name}"
+                break
+    return manifest
 
 
 @router.get("/map/selftest")

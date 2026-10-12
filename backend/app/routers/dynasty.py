@@ -43,10 +43,11 @@ def millennium(
     name: str = Query(min_length=2, max_length=24),
     lng: float = Query(ge=70, le=140),
     lat: float = Query(ge=15, le=55),
+    landmark_key: str | None = Query(default=None, max_length=64),
 ) -> dict:
     """一块土地的千年：锁定一个今名与坐标，逐期返回这里当时叫什么、是什么地方。"""
 
-    return millennium_data.build_payload(name.strip(), lng, lat)
+    return millennium_data.build_payload(name.strip(), lng, lat, landmark_key)
 
 
 @router.get("/{key}")

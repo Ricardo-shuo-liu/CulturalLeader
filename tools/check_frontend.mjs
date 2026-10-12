@@ -685,6 +685,12 @@ check('穿越：驿道光带按最近邻连边（每点至少一条、无重复�
 
 const cameraTrack = await import(path.join(root, 'frontend/js/camera_track.js'));
 const millennium = await import(path.join(root, 'frontend/js/map/millennium.js'));
+const millenniumTerrain = await import(path.join(root, 'frontend/js/map/millennium_terrain.js'));
+const millenniumTimeline = await import(path.join(root, 'frontend/js/map/millennium_timeline.js'));
+const millenniumStrata = await import(path.join(root, 'frontend/js/map/millennium_strata.js'));
+const millenniumStyle = await import(path.join(root, 'frontend/js/map/millennium_style.js'));
+const millenniumDiorama = await import(path.join(root, 'frontend/js/map/millennium_diorama.js'));
+const millenniumLandmark = await import(path.join(root, 'frontend/js/map/millennium_landmark.js'));
 const movieExport = await import(path.join(root, 'frontend/js/map/movie_export.js'));
 const audioAssets = await import(path.join(root, 'frontend/js/audio_assets.js'));
 
@@ -718,13 +724,13 @@ check('运镜：关键帧采样起点/终点/中段缓动都对', () => {
 });
 
 check('千年：代表时刻换算成北京时间 Date（现代为实时）', () => {
-  const date = millennium.eraLightingDate('06-22T19:40', new Date('2026-01-01T00:00:00Z'));
+  const date = millennium.lightingDateForYear([{ lighting: '06-22T19:40' }], 0, 0, 0, 2026);
   assert.equal(date.getUTCFullYear(), 2026);
   assert.equal(date.getUTCMonth() + 1, 6);
   assert.equal(date.getUTCDate(), 22);
   assert.equal(date.getUTCHours(), 11, '19:40 北京时 = 11:40 UTC');
   assert.equal(date.getUTCMinutes(), 40);
-  assert.equal(millennium.eraLightingDate(null), null);
+  assert.equal(millennium.lightingDateForYear([{ lighting: null }], 0, 0, 0), null);
   return `${date.toISOString()}（现代一期为 null → 走实时）`;
 });
 
@@ -758,9 +764,26 @@ check('千年：近旁地名按 30km 过滤、主地名优先，改名链去重'
   return `近旁 ${near.length} 处 · 改名链 ${millennium.nameChain(eras).join('→')}`;
 });
 
-check('千年：payload 校验能挡下缺时期/缺古名的数据', () => {
+const FIXTURE_BANDS = Array.from({ length: 11 }, (item, index) => ({
+  key: `b${index}`,
+  name: `朝代${index}`,
+  start: index === 0 ? -221 : index * 100,
+  end: index * 100 + 100,
+  color: '#d8b46a',
+  period: 'x',
+}));
+FIXTURE_BANDS[0].end = 100;
+for (let index = 1; index < FIXTURE_BANDS.length; index += 1) {
+  FIXTURE_BANDS[index].start = FIXTURE_BANDS[index - 1].end;
+  FIXTURE_BANDS[index].end = FIXTURE_BANDS[index].start + 100;
+}
+
+check('千年：payload 校验能挡下缺时期/缺古名/断带的数据', () => {
   const good = {
     counts: { matched: 2 },
+    bounds: { start: -221, end: 1100, blend_years: 12 },
+    bands: FIXTURE_BANDS,
+    events: [{ year: -100 }, { year: 300 }],
     eras: Array.from({ length: 11 }, (item, index) => ({
       key: `k${index}`,
       name: `时期${index}`,
@@ -773,11 +796,179 @@ check('千年：payload 校验能挡下缺时期/缺古名的数据', () => {
   };
   const detail = millennium.validateMillenniumPayload(good);
   assert.equal(detail.eras, 11);
+  assert.equal(detail.bands, 11);
   assert.throws(() => millennium.validateMillenniumPayload({ eras: [] }), /时期数量/);
   const bad = JSON.parse(JSON.stringify(good));
   bad.eras[0].place = null;
   assert.throws(() => millennium.validateMillenniumPayload(bad), /没有古名|缺古名|匹配了/);
-  return `11 期校验通过 · 异常数据被拦下`;
+  const broken = JSON.parse(JSON.stringify(good));
+  broken.bands[3].start = 999;
+  assert.throws(() => millennium.validateMillenniumPayload(broken), /不连续/);
+  return `11 期 / 11 段校验通过 · 异常数据被拦下`;
+});
+
+check('千年时间轴：分段边界、混合窗与纪年文案', () => {
+  const bands = FIXTURE_BANDS;
+  const early = millenniumTimeline.bandAt(-200, bands);
+  assert.equal(early.index, 0);
+  assert.equal(early.mix, 0, '段内不混合');
+  const boundary = millenniumTimeline.bandAt(100, bands);
+  assert.equal(boundary.index, 1, '边界年归入后一段');
+  assert.ok(boundary.mix > 0.4 && boundary.mix < 0.6, `边界处应约在半程：${boundary.mix}`);
+  const after = millenniumTimeline.bandAt(160, bands);
+  assert.equal(after.index, 1);
+  assert.equal(after.mixA, 1);
+  assert.equal(after.mixB, 1, '过窗后完全属于新段');
+  assert.equal(millenniumTimeline.yearText(-210), '前 210 年');
+  assert.equal(millenniumTimeline.yearText(750), '公元 750 年');
+  assert.equal(millenniumTimeline.yearText(2026), '2026 年');
+  assert.equal(millenniumTimeline.yearsOfBand({ start: 618, end: 907 }), 289);
+  const ticks = millenniumTimeline.eventTickLayout([{ year: -221, title: 'a' }, { year: 1100, title: 'b' }], {
+    start: -221,
+    end: 1100,
+  });
+  assert.equal(ticks[0].ratio, 0);
+  assert.equal(ticks[1].ratio, 1);
+  const crossed = millenniumTimeline.crossedEvents([{ year: 100 }, { year: 500 }], 90, 510);
+  assert.equal(crossed.length, 2);
+  assert.equal(millenniumTimeline.bandMidYear({ start: 0, end: 100 }), 50);
+  return `边界 ${boundary.mix.toFixed(2)} · 文案「${millenniumTimeline.yearText(-210)}」`;
+});
+
+check('千年地形：轮廓重采样成等长闭合环，插值居中', () => {
+  const square = [
+    [0, 0],
+    [10, 0],
+    [10, 10],
+    [0, 10],
+    [0, 0],
+  ];
+  const ring = millenniumTerrain.resampleRing(square, 60);
+  assert.equal(ring.length, 61, '返回 count+1 个点便于连线');
+  assert.ok(Math.abs(ring[0][0] - ring[60][0]) < 1e-6 && Math.abs(ring[0][1] - ring[60][1]) < 1e-6, '首尾闭合');
+  ring.forEach(([lng, lat]) => {
+    assert.ok(lng >= -1e-6 && lng <= 10 + 1e-6 && lat >= -1e-6 && lat <= 10 + 1e-6, '点应落在原环范围内');
+  });
+  const mid = millenniumTerrain.lerpRing([[0, 0], [10, 0]], [[0, 10], [10, 10]], 0.5);
+  assert.deepEqual(mid, [[0, 5], [10, 5]]);
+  return `${ring.length} 点等长环 · 插值中点 ${mid[0][1]}`;
+});
+
+check('地层柱：层厚 ∝ 朝代年数（宋厚、秦薄）', () => {
+  const bands = [
+    { key: 'qin', name: '秦', start: -221, end: -206, color: '#999' },
+    { key: 'song', name: '宋', start: 907, end: 1279, color: '#999' },
+  ];
+  const layout = millenniumStrata.strataLayout(bands);
+  assert.ok(layout[1].thickness > layout[0].thickness * 5, `${layout[1].thickness} 应远厚于 ${layout[0].thickness}`);
+  assert.ok(layout[0].thickness >= millenniumStrata.STRATA_MIN - 1e-9);
+  assert.ok(layout[1].thickness <= millenniumStrata.STRATA_MAX + 1e-9);
+  assert.ok(layout[1].center > layout[0].center, '自下而上排布');
+  return `秦 ${layout[0].thickness.toFixed(4)} / 宋 ${layout[1].thickness.toFixed(4)}`;
+});
+
+check('千年：代表时刻解析与逐年插值（唐夏至黄昏 → 宋秋日傍晚）', () => {
+  const tang = millennium.parseLighting('06-22T19:40');
+  assert.equal(tang.dayOfYear, 173, '6 月 22 日是第 173 天');
+  assert.equal(tang.minutes, 19 * 60 + 40);
+  assert.equal(millennium.parseLighting(null), null);
+  const eras = [{ lighting: '06-22T19:40' }, { lighting: '10-01T17:10' }];
+  const start = millennium.lightingDateForYear(eras, 0, 1, 0, 2026);
+  const end = millennium.lightingDateForYear(eras, 0, 1, 1, 2026);
+  assert.ok(start.getTime() < end.getTime(), '插值应随时间推进');
+  assert.equal(millennium.lightingDateForYear([{ lighting: null }, { lighting: null }], 0, 1, 0), null);
+  return `夏至黄昏 → 秋日傍晚（${start.toISOString().slice(5, 10)} → ${end.toISOString().slice(5, 10)}）`;
+});
+
+check('千年形态：城市性格与朝代形态合成画面参数', () => {
+  const quanzhou = millenniumStyle.sceneParams('泉州', 5);
+  assert.ok(quanzhou.harbor && quanzhou.boats > 0.5, '泉州应是港口');
+  assert.ok(quanzhou.walls > 0.5 && quanzhou.pagoda >= 1, '唐时的泉州有城有塔');
+  const dunhuang = millenniumStyle.sceneParams('敦煌', 1);
+  assert.ok(dunhuang.dunes && dunhuang.caves && dunhuang.caravans, '敦煌应有沙丘、洞窟与驼队');
+  const xianModern = millenniumStyle.sceneParams('西安', 10);
+  assert.equal(xianModern.towers, 1);
+  assert.equal(xianModern.walls, 0, '现代不再有城墙');
+  const xianTang = millenniumStyle.sceneParams('西安', 5);
+  assert.ok(xianTang.walls > 0.8 && xianTang.palace === 1, '唐的城最高大');
+  return '泉州港口 / 敦煌驼队 / 西安唐城 vs 现代楼群';
+});
+
+check('环幕：天空分段、方位锚定与角度环绕连续', () => {
+  const day = millenniumStyle.skyPalette(30);
+  const night = millenniumStyle.skyPalette(-20);
+  assert.notEqual(day.top, night.top, '白天与夜晚的天空色不同');
+  assert.equal(millenniumStyle.skyPhase(30), 'day');
+  assert.equal(millenniumStyle.skyPhase(-20), 'night');
+  // 城市方位：乌鲁木齐在西、上海在东，方位角应一负一正（0 = 正北，顺时针为正）
+  const urumqi = millenniumStyle.bearingOf(87.62, 43.83);
+  const shanghai = millenniumStyle.bearingOf(121.47, 31.23);
+  assert.ok(urumqi < -0.4, `乌鲁木齐应在地图中心偏西：${urumqi.toFixed(2)}`);
+  assert.ok(shanghai > 0.4, `上海应在地图中心偏东：${shanghai.toFixed(2)}`);
+  const ring = millenniumStyle.ringPosition(0, 10, 1);
+  assert.ok(Math.abs(ring.x) < 1e-9 && ring.z < 0, '正北 = -z');
+  assert.ok(Math.abs(millenniumStyle.wrapAngleDelta(3.0, -3.0)) < 0.3, '跨 ±π 的夹角应最短');
+  return `乌鲁木齐 ${((urumqi * 180) / Math.PI).toFixed(0)}° / 上海 ${((shanghai * 180) / Math.PI).toFixed(0)}° · 晨昏换色`;
+});
+
+check('地标建造：年份 → 状态机（缺席 / 在建 / 完建 / 残迹）', () => {
+  const yellowCrane = [
+    { year: 223, span: 1, action: 'build', label: '始建' },
+    { year: 1981, span: 4, action: 'rebuild', label: '重建' },
+  ];
+  assert.equal(millenniumLandmark.constructionState(yellowCrane, 200).state, 'absent');
+  assert.equal(millenniumLandmark.constructionState(yellowCrane, 224).state, 'ruins', '空档应为残迹');
+  const building = millenniumLandmark.constructionState(yellowCrane, 1500);
+  assert.equal(building.state, 'ruins');
+  const rebuild = millenniumLandmark.constructionState(yellowCrane, 1983);
+  assert.equal(rebuild.state, 'building');
+  assert.ok(rebuild.progress > 0.4 && rebuild.progress < 0.6, `重建半程：${rebuild.progress}`);
+  assert.equal(millenniumLandmark.constructionState(yellowCrane, 1990).state, 'complete');
+  const bellTower = [
+    { year: 1384, span: 1, action: 'build', label: '始建', gap: 'keep' },
+    { year: 1582, span: 1, action: 'rebuild', label: '迁建', gap: 'keep' },
+  ];
+  assert.equal(millenniumLandmark.constructionState(bellTower, 1500).state, 'complete', '迁建类空档楼仍在场');
+  const macau = [
+    { year: 1602, span: 8, action: 'build', label: '始建' },
+    { year: 1835, span: 1, action: 'burn', label: '大火' },
+  ];
+  assert.equal(millenniumLandmark.constructionState(macau, 1835).state, 'burning');
+  assert.equal(millenniumLandmark.constructionState(macau, 1900).state, 'ruins');
+  assert.equal(
+    millenniumLandmark.constructionState([], 1900, { always: true }).state,
+    'always',
+    '常在类始终在场',
+  );
+  const mohao = millenniumLandmark.constructionState([{ year: 366, span: 600, action: 'build', label: '开凿' }], 500);
+  assert.equal(mohao.state, 'building');
+  assert.ok(mohao.revealed > 0 && mohao.revealed < 14, `开凿半程已现 ${mohao.revealed}/14 层`);
+  return `黄鹤楼 1983 重建 ${(rebuild.progress * 100).toFixed(0)}% · 莫高窟 500 年 ${mohao.revealed}/14 层`;
+});
+
+check('地标建造：构件按高度分层（从下往上）', () => {
+  const heights = [3.0, 1.0, 2.2, 0.4, 1.6, 2.8];
+  const layers = millenniumLandmark.assignLayers(heights, 3);
+  assert.equal(layers[3], 0, '最低的构件在第一层');
+  assert.equal(layers[0], 2, '最高的构件在最后一层');
+  const ordered = heights
+    .map((height, index) => ({ height, layer: layers[index] }))
+    .sort((a, b) => a.height - b.height)
+    .map((item) => item.layer);
+  assert.deepEqual(ordered, [0, 0, 1, 1, 2, 2], '层号随高度单调不减');
+  return `6 个构件 → 层序 ${layers.join('')}`;
+});
+
+check('城郭剪影：与银幕同源，随朝代长高加塔起高楼', () => {
+  const qin = millenniumDiorama.dioramaSpec('西安', 0);
+  const tang = millenniumDiorama.dioramaSpec('西安', 5);
+  const modern = millenniumDiorama.dioramaSpec('西安', 10);
+  assert.equal(qin.pagodaLevels, 0, '秦无塔');
+  assert.equal(tang.pagodaLevels, 4, '唐有四层塔');
+  assert.ok(tang.wallHeight > qin.wallHeight, '唐的城墙比秦高');
+  assert.equal(modern.towers, 6, '现代六栋高楼');
+  assert.equal(modern.wallHeight, 0, '现代城墙归零');
+  return `秦墙 ${qin.wallHeight.toFixed(3)} → 唐墙 ${tang.wallHeight.toFixed(3)} → 现代楼 ${modern.towers} 栋`;
 });
 
 check('电影：脚本包含天数/点位/旁白，总时长压缩到 72 秒内', () => {

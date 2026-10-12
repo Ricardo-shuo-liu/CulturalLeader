@@ -1874,3 +1874,279 @@ body.movie-mode #toast {
   border-color: var(--gold);
   color: var(--gold);
 }
+
+/* 语音未解锁提示：开场期间也可见（#toast 在开场会被隐藏，这里不受影响） */
+#voice-hint {
+  position: fixed;
+  left: 50%;
+  bottom: 96px;
+  transform: translateX(-50%);
+  z-index: 66;
+  padding: 8px 20px;
+  border: 1px solid var(--gold-soft);
+  border-radius: 999px;
+  background: rgba(13, 20, 24, 0.9);
+  color: var(--paper);
+  font-family: var(--serif);
+  font-size: 13px;
+  letter-spacing: 1px;
+  box-shadow: var(--shadow-card);
+  animation: inkReveal 0.4s ease both;
+}
+
+#voice-hint.hidden {
+  display: none !important;
+}
+
+/* ── 千年重塑：连续年份轴 / 事件卡 / 地层柱标签 ─────────────── */
+
+#millennium-bar .mb-head {
+  display: flex;
+  align-items: baseline;
+  gap: 14px;
+}
+
+#millennium-bar .mb-year {
+  color: var(--paper);
+  font-size: 26px;
+  letter-spacing: 3px;
+}
+
+#millennium-bar .mb-era {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  color: var(--paper-dim);
+  font-size: 12.5px;
+}
+
+#millennium-bar .mb-era strong {
+  color: var(--gold);
+  font-size: 17px;
+  letter-spacing: 4px;
+}
+
+#millennium-bar .mb-chain {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin-top: 6px;
+  color: var(--paper-faint);
+  font-size: 12px;
+  letter-spacing: 1px;
+}
+
+#millennium-bar .mt-chain-item.active {
+  color: var(--gold);
+  border-bottom: 1px solid var(--gold-soft);
+}
+
+#millennium-bar .mt-chain-arrow {
+  opacity: 0.5;
+}
+
+#millennium-bar .mb-track {
+  position: relative;
+  height: 48px;
+  margin-top: 8px;
+}
+
+#mt-bands {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 0;
+  height: 22px;
+  border-radius: 2px;
+  overflow: hidden;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid var(--hairline);
+}
+
+.mt-band {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  border-right: 1px solid rgba(13, 20, 24, 0.55);
+  background: color-mix(in srgb, var(--era-color, #d8b46a) 24%, rgba(13, 20, 24, 0.4));
+}
+
+.mt-band span {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  color: rgba(239, 230, 210, 0.72);
+  font-size: 10.5px;
+  letter-spacing: 1px;
+  white-space: nowrap;
+}
+
+.mt-band.active {
+  background: color-mix(in srgb, var(--era-color, #d8b46a) 52%, rgba(13, 20, 24, 0.35));
+}
+
+#mt-events {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 22px;
+  height: 12px;
+}
+
+.mt-event {
+  position: absolute;
+  top: 0;
+  width: 2px;
+  height: 9px;
+  padding: 0;
+  border: none;
+  background: var(--gold-soft);
+  cursor: pointer;
+}
+
+.mt-event:hover {
+  height: 12px;
+  background: var(--gold);
+}
+
+#mt-range {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  width: 100%;
+  margin: 0;
+  appearance: none;
+  -webkit-appearance: none;
+  background: transparent;
+}
+
+#mt-range::-webkit-slider-runnable-track {
+  height: 4px;
+  border-radius: 2px;
+  background: rgba(255, 255, 255, 0.12);
+}
+
+#mt-range::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 12px;
+  height: 18px;
+  margin-top: -7px;
+  border-radius: 2px;
+  border: 1px solid rgba(0, 0, 0, 0.4);
+  background: linear-gradient(180deg, #f2cd84, #b98a3c);
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.5);
+}
+
+#mt-range::-moz-range-track {
+  height: 4px;
+  border-radius: 2px;
+  background: rgba(255, 255, 255, 0.12);
+}
+
+#mt-range::-moz-range-thumb {
+  width: 12px;
+  height: 18px;
+  border-radius: 2px;
+  border: 1px solid rgba(0, 0, 0, 0.4);
+  background: linear-gradient(180deg, #f2cd84, #b98a3c);
+}
+
+#millennium-bar .mb-controls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 10px;
+}
+
+.mb-check {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--paper-dim);
+  font-size: 12px;
+}
+
+#millennium-autoplay.on {
+  border-color: var(--gold);
+  color: var(--gold);
+}
+
+#millennium-screen-toggle.on,
+#millennium-diorama-toggle.on {
+  border-color: var(--stone);
+  color: #bcd6e4;
+}
+
+#millennium-diorama-toggle.hidden {
+  display: none !important;
+}
+
+#millennium-event {
+  position: fixed;
+  left: 50%;
+  top: 92px;
+  z-index: 35;
+  width: min(430px, 90vw);
+  padding: 14px 18px;
+  border: 1px solid var(--gold-soft);
+  border-radius: var(--radius-card);
+  background: rgba(13, 20, 24, 0.92);
+  box-shadow: var(--shadow-card);
+  font-family: var(--serif);
+  text-align: center;
+  opacity: 0;
+  transform: translate(-50%, -14px) scale(0.98);
+  pointer-events: none;
+  transition: opacity 0.4s ease, transform 0.4s ease;
+}
+
+#millennium-event.hidden {
+  display: none !important;
+}
+
+#millennium-event.show {
+  opacity: 1;
+  transform: translate(-50%, 0) scale(1);
+  pointer-events: auto;
+  cursor: pointer;
+}
+
+#millennium-event .me-year {
+  color: var(--gold);
+  font-size: 12px;
+  letter-spacing: 2px;
+}
+
+#millennium-event .me-title {
+  margin-top: 4px;
+  color: var(--paper);
+  font-size: 20px;
+  letter-spacing: 4px;
+}
+
+#millennium-event .me-text {
+  margin-top: 6px;
+  color: var(--paper-dim);
+  font-size: 13px;
+  line-height: 1.7;
+}
+
+#millennium-strata-label {
+  position: fixed;
+  left: 0;
+  top: 0;
+  z-index: 23;
+  padding: 2px 8px 3px;
+  border: 1px solid var(--hairline-strong);
+  border-radius: 2px;
+  background: rgba(13, 20, 24, 0.8);
+  color: var(--paper-dim);
+  font-family: var(--serif);
+  font-size: 11.5px;
+  white-space: nowrap;
+  pointer-events: none;
+}

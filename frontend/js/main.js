@@ -125,6 +125,19 @@ async function boot() {
   const handlers = {};
   const ui = createUI({ cities, handlers });
 
+  // 语音 / 音频策略：/api/config 到位后回填（voice 稍后才创建，用 holder 承接）
+  const audioPolicy = { allowBrowserVoice: true, musicUrls: [] };
+  let voiceHolder = null;
+  let blockedSpeech = null;
+
+  function applyAudioPolicy() {
+    if (voiceHolder) voiceHolder.allowBrowserVoice = audioPolicy.allowBrowserVoice;
+  }
+
+  function showVoiceHint(on) {
+    document.getElementById('voice-hint')?.classList.toggle('hidden', !on);
+  }
+
   // 语音状态：让用户一眼看出「现在是云端 TTS 还是浏览器合成」
   fetch('/api/config')
     .then((response) => (response.ok ? response.json() : null))
@@ -139,6 +152,12 @@ async function boot() {
         node.textContent += '（点「语音自检」看修复方法：python tools/check_voice.py）';
       }
       window.__cl_voiceHint = config.tts_hint || '';
+      // 云端就绪 → 禁用系统语音兜底；环境音按服务端下发的素材清单加载
+      audioPolicy.allowBrowserVoice = Boolean(config.allow_browser_voice);
+      applyAudioPolicy();
+      ambience.setManifest(config.ambience || {});
+      audioPolicy.musicUrls.length = 0;
+      if (config.ambience?.guqin) audioPolicy.musicUrls.push(config.ambience.guqin);
     })
     .catch(() => {});
 
@@ -409,6 +428,7 @@ async function boot() {
     controls,
     ui,
     cityBridge: { show: movieShowCity, hide: movieHideCity },
+    musicUrls: audioPolicy.musicUrls,
     setSceneDate: (date) => {
       clockState.live = false;
       clockState.override = date;
@@ -561,7 +581,14 @@ async function boot() {
     },
     onRecognizeError: (message) => ui.toast(message),
     onHuman: (message) => human.playAction(message?.Data?.Action),
+    onAutoplayBlocked: (text) => {
+      // 没有用户手势，浏览器不肯出声：先把这句话存住，点任意处后自动补播
+      blockedSpeech = text;
+      showVoiceHint(true);
+    },
   });
+  voiceHolder = voice;
+  applyAudioPolicy();
 
   function speak(text) {
     if (!text) return;
@@ -609,8 +636,14 @@ async function boot() {
     ui,
     voice,
     narrate,
-    applyOutline,
     flyTo,
+    ambience,
+    getTerrainGeometry: () => terrain.mesh.geometry,
+    setModernOutlineVisible: (visible) => {
+      // 千年模式下把现代国境压成极淡的「未及之地」参考线，退出时恢复
+      if (borderMain?.material) borderMain.material.opacity = visible ? 0.85 : 0.08;
+      if (borderGlow?.material) borderGlow.material.opacity = visible ? 0.2 : 0.04;
+    },
     closeDrawer: () => toggleDrawer(false),
     onSceneTime: (date) => {
       clockState.live = false;
@@ -839,8 +872,8 @@ async function boot() {
       return;
     }
     if (millennium?.isActive?.()) {
-      // 千年模式：地点点击由 DOM 名牌接管，画布本身不参与命中
-      renderer.domElement.style.cursor = 'grab';
+      // 千年模式：地名由 DOM 名牌接管；画布上只有地层柱参与命中
+      renderer.domElement.style.cursor = millennium.pointerMove?.(event) ? 'pointer' : 'grab';
       return;
     }
     const positions = cityPoints.screenPositions(camera, window.innerWidth, window.innerHeight);
@@ -883,8 +916,11 @@ async function boot() {
       dynastyMode.pointerUp(event);
       return;
     }
-    // 千年模式：地点由 DOM 名牌接管点击；空白处不做任何事（镜头锁在点上）
-    if (millennium?.isActive?.()) return;
+    // 千年模式：地名由 DOM 名牌接管点击；画布上只处理地层柱的落点
+    if (millennium?.isActive?.()) {
+      millennium.pointerUp?.(event);
+      return;
+    }
 
     // 1) 重点城市（带讲解）：单击看 3D 地标，双击进入流程编辑
     if (hoverIndex >= 0) {
@@ -937,6 +973,7 @@ async function boot() {
     borderGlow.material.resolution.set(width, height);
     borderMain.material.resolution.set(width, height);
     dynastyMode.resize(width, height); // 驿道光带同样是按像素线宽绘制的
+    millennium?.resize?.(width, height); // 千年边界线也是像素线宽
     // 在流程编辑/攻略面板里数字人改用小尺寸（CSS 位置见 map_ui.css），避免被放大糊掉
     const inPanel = document.body.classList.contains('planner-open');
     human.resize(
@@ -1083,12 +1120,22 @@ async function boot() {
     const card = document.getElementById('city-card');
     const city = card?.__city;
     card?.classList.add('hidden');
-    if (city) millennium.open(city);
+    if (city) {
+      // 城市卡可能来自不同入口：补齐 landmark_key，交给千年模式演"真实地标随史建造"
+      const entry = findCity(cityIndex, city.name) || {};
+      millennium.open({ ...city, landmark_key: city.landmark_key || entry.landmark_key || '' });
+    }
   });
 
   document.getElementById('panel-millennium')?.addEventListener('click', () => {
     if (!activeCity) return;
-    const city = { name: activeCity.name, lng: activeCity.lng, lat: activeCity.lat };
+    const entry = findCity(cityIndex, activeCity.name) || {};
+    const city = {
+      name: activeCity.name,
+      lng: activeCity.lng,
+      lat: activeCity.lat,
+      landmark_key: entry.landmark_key || activeCity.landmark_key || '',
+    };
     ui.hidePanel();
     ui.setActive(null);
     activeCity = null;
@@ -1120,6 +1167,7 @@ async function boot() {
   });
 
   let lastTime = performance.now();
+  let lastLighting = null; // 供 __cl.debug 读取（环幕/日照耦合的验收断言）
   const perf = { samples: [], quality: 0, slowSeconds: 0, fastSeconds: 0 };
 
   // 画质预设：手动选择后不再自动降级（自动降级只作用于"高"档）
@@ -1191,6 +1239,7 @@ async function boot() {
     lastTime = now;
     const date = sceneDate();
     const state = sampleLighting(date);
+    lastLighting = state;
     state.utcHours = utcHours(date);
     const beijing = beijingParts(date);
 
@@ -1261,6 +1310,7 @@ async function boot() {
     }
     dynastyMode.update(now / 1000, state, date);
     millennium?.update?.(now / 1000, state, date);
+    terrain.mesh.visible = !millennium?.isActive?.();
     applyAdaptiveQuality(delta);
 
     human.setEnergy(muted ? 0 : voice.level());
@@ -1411,13 +1461,28 @@ async function boot() {
     millenniumOpen: (name) => {
       const city = cities.find((item) => item.name === name) || findCity(cityIndex, name);
       if (!city) return null;
-      millennium.open({ name: city.name, lng: city.lng, lat: city.lat });
+      const entry = findCity(cityIndex, city.name) || {};
+      millennium.open({
+        name: city.name,
+        lng: city.lng,
+        lat: city.lat,
+        landmark_key: city.landmark_key || entry.landmark_key || '',
+      });
       return city.name;
     },
     millenniumEra: (index) => {
       millennium.setEra(index);
       return millennium.debug();
     },
+    millenniumYear: (year) => {
+      millennium.setYear(year, { source: 'step' });
+      return millennium.debug();
+    },
+    millenniumAutoplay: () => {
+      document.getElementById('millennium-autoplay')?.click();
+      return millennium.autoplay();
+    },
+    millenniumClickAt: (x, y) => Boolean(millennium.pointerUp?.({ clientX: x, clientY: y })),
     millenniumExit: () => millennium.close(),
     millenniumStrata: (open) => {
       millennium.toggleStrata(open);
@@ -1557,6 +1622,12 @@ async function boot() {
         live: clockState.live,
         override: clockState.override ? clockState.override.toISOString() : null,
       },
+      solar: lastLighting ? { altitude: lastLighting.altitude, azimuth: lastLighting.azimuth } : null,
+      voice: {
+        mode: voice.currentMode(),
+        allowBrowserVoice: voice.allowBrowserVoice,
+        unlocked: voice.unlocked,
+      },
     }),
   };
 
@@ -1568,7 +1639,14 @@ async function boot() {
   window.addEventListener(
     'pointerdown',
     () => {
+      voice.unlock();
       ambience.start();
+      if (blockedSpeech) {
+        const text = blockedSpeech;
+        blockedSpeech = null;
+        showVoiceHint(false);
+        voice.enqueue(text);
+      }
     },
     { once: true },
   );

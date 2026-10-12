@@ -21,6 +21,10 @@ export class VoiceIO {
     this.syntheticPhase = 0;
     this.lastLevel = 0;
     this.abortController = null;
+    // 云端 TTS 就绪时不允许退回系统语音兜底（espeak 念中文像逐字拼读，观感很差）
+    this.allowBrowserVoice = true;
+    this.unlocked = false;
+    this.mode = 'idle';
   }
 
   /** 用户手势后才能创建 AudioContext。 */
@@ -39,6 +43,22 @@ export class VoiceIO {
     } catch (error) {
       console.warn('[voice] 音频分析不可用', error);
     }
+  }
+
+  /** 首次用户手势调用：解锁音频图，之后的 play() 不再被自动播放策略拦截。 */
+  unlock() {
+    this.ensureAudio();
+    try {
+      this.audioContext?.resume?.();
+    } catch (error) {
+      /* 忽略 */
+    }
+    this.unlocked = true;
+  }
+
+  /** 当前声音来源（调试与验收用）：cloud / browser / blocked / idle。 */
+  currentMode() {
+    return this.mode;
   }
 
   /** 当前张口幅度 0..1。 */
@@ -219,12 +239,19 @@ export class VoiceIO {
           this.audio.src = url;
           try {
             await this.audio.play();
+            this.mode = 'cloud';
           } catch (error) {
-            // 浏览器自动播放策略拦截（还没有用户手势时很常见）：只让这一句先用浏览器语音，
-            // 不要把云端 TTS 判成不可用——否则一次拦截会让整个会话都退回浏览器语音。
             URL.revokeObjectURL(url);
-            this.notifyVoiceUnavailable('浏览器拦截了自动播放：点一下页面任意处再试；本次先用浏览器语音。');
-            return this.browserSpeak(text);
+            this.mode = 'blocked';
+            // 还没有用户手势：交给主程序暂存，等第一次点击后自动补播。
+            // 云端 TTS 可用时绝不退回系统语音（那是「像在念字母」的元凶）。
+            if (!this.unlocked && !this.allowBrowserVoice) {
+              this.handlers.onAutoplayBlocked?.(text);
+              return;
+            }
+            // 已解锁仍然播不出来：按普通错误处理
+            this.notifyVoiceUnavailable('这句话没有播出来：点一下页面任意处再试一次。');
+            return;
           }
           await new Promise((resolve) => {
             const done = () => {
@@ -243,6 +270,7 @@ export class VoiceIO {
         this.ttsUnavailable = true;
       }
     }
+    this.mode = 'browser';
     await this.browserSpeak(text);
   }
 

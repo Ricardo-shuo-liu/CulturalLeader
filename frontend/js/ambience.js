@@ -1,28 +1,20 @@
 // 环境音：风声 / 水声 / 古琴（有素材就用素材，没有就用 WebAudio 合成风声水声兜底）。
 // 与「静音」按钮联动；数字人播报时自动压低环境音（ducking）。
 
-import { guqinLoop, noiseBuffer } from './audio_assets.js';
+import {
+  bellBuffer,
+  buildStrikeBuffer,
+  chimeBuffer,
+  guqinLoop,
+  noiseBuffer,
+  padLoop,
+  whooshBuffer,
+} from './audio_assets.js';
 
-const ASSET_CANDIDATES = {
-  // 用可选的 CC0 素材；文件缺失（404）时自动退回合成
-  wind: ['/assets/audio/wind.webm', '/assets/audio/wind.ogg', '/assets/audio/wind.mp3'],
-  water: ['/assets/audio/water.webm', '/assets/audio/water.ogg', '/assets/audio/water.mp3'],
-  guqin: ['/assets/audio/guqin.webm', '/assets/audio/guqin.ogg', '/assets/audio/guqin.mp3'],
-};
+// 素材清单由 /api/config 的 ambience 字段下发（服务端扫描 frontend/assets/audio/），
+// 没有文件就直接用合成音——不再逐个探测 URL 造成 404 噪音。
 
-async function fetchFirst(urls) {
-  for (const url of urls) {
-    try {
-      const response = await fetch(url);
-      if (response.ok) return await response.arrayBuffer();
-    } catch (error) {
-      /* 试下一个 */
-    }
-  }
-  return null;
-}
-
-export function createAmbience() {
+export function createAmbience({ manifest = {} } = {}) {
   const state = {
     ctx: null,
     master: null,
@@ -31,7 +23,19 @@ export function createAmbience() {
     volume: 0.7,
     sources: [],
     assetUsed: '',
+    manifest: { ...manifest },
+    stingBuffers: new Map(),
+    buildBuffers: new Map(),
+    whoosh: null,
+    whooshAt: 0,
+    pads: [],
+    mood: 1,
   };
+
+  /** 运行时更新素材清单（/api/config 到位后调用）。 */
+  function setManifest(manifest_) {
+    state.manifest = { ...(manifest_ || {}) };
+  }
 
   function ensure() {
     if (state.ctx) return state.ctx;
@@ -67,7 +71,16 @@ export function createAmbience() {
   }
 
   async function loadLoop(key, { gain, filter = null }) {
-    const data = await fetchFirst(ASSET_CANDIDATES[key]);
+    const url = state.manifest[key];
+    if (!url) return false;
+    let data = null;
+    try {
+      const response = await fetch(url);
+      if (!response.ok) return false;
+      data = await response.arrayBuffer();
+    } catch (error) {
+      return false;
+    }
     if (!data) return false;
     try {
       const buffer = await state.ctx.decodeAudioData(data);
@@ -121,8 +134,106 @@ export function createAmbience() {
       state.sources.push(source);
       state.assetUsed = `${state.assetUsed}${state.assetUsed ? '+' : ''}synth-guqin`;
     }
+    buildPads();
     applyGain(undefined, 2.6);
     return true;
+  }
+
+  // ── 朝代氛围 pad（古代 / 帝制 / 近代三段）────────────────────
+  const MOOD_ROOTS = [65.41, 73.42, 87.31];
+
+  function buildPads() {
+    MOOD_ROOTS.forEach((root, index) => {
+      const source = state.ctx.createBufferSource();
+      source.buffer = padLoop(state.ctx, { root, seconds: 12 });
+      source.loop = true;
+      const gainNode = state.ctx.createGain();
+      gainNode.gain.value = index === state.mood ? 0.075 : 0.0001;
+      source.connect(gainNode).connect(state.master);
+      source.start();
+      state.sources.push(source);
+      state.pads.push(gainNode);
+    });
+  }
+
+  /** 0=古代（秦—隋）1=帝制（唐—清）2=近代（晚清—今）。 */
+  function moodForEra(eraIndex) {
+    if (!Number.isFinite(eraIndex)) return 1;
+    if (eraIndex <= 4) return 0;
+    if (eraIndex <= 9) return 1;
+    return 2;
+  }
+
+  function setMood(eraIndex) {
+    state.mood = moodForEra(eraIndex);
+    if (!state.started) return;
+    state.pads.forEach((gainNode, index) => {
+      const target = index === state.mood ? 0.075 : 0.0001;
+      gainNode.gain.cancelScheduledValues(state.ctx.currentTime);
+      gainNode.gain.linearRampToValueAtTime(target, state.ctx.currentTime + 1.6);
+    });
+  }
+
+  // ── 跨朝钟磬 + 时光流速 ──────────────────────────────────────
+  const STING_SCALE = [130.81, 146.83, 155.56, 174.61, 196.0, 220.0, 233.08, 261.63, 293.66, 311.13, 349.23];
+
+  function stingBuffer(eraIndex) {
+    const key = `sting-${eraIndex}`;
+    if (state.stingBuffers.has(key)) return state.stingBuffers.get(key);
+    const base = STING_SCALE[Math.max(0, Math.min(STING_SCALE.length - 1, eraIndex))];
+    const buffer =
+      eraIndex <= 5
+        ? bellBuffer(state.ctx, { base: base / 2, seconds: 5.5 })
+        : chimeBuffer(state.ctx, { base, seconds: 3.4 });
+    state.stingBuffers.set(key, buffer);
+    return buffer;
+  }
+
+  /** 跨过一个朝代时敲一记：早段编钟、后段石磬。 */
+  function sting(eraIndex = 0) {
+    if (!state.started || state.muted) return;
+    const source = state.ctx.createBufferSource();
+    source.buffer = stingBuffer(eraIndex);
+    const gainNode = state.ctx.createGain();
+    gainNode.gain.value = 0.55;
+    source.connect(gainNode).connect(state.master);
+    source.start();
+  }
+
+  /** 快速拖动时间轴时的「时光流速」：强度 0..1，自带节流。 */
+  function whoosh(intensity = 0) {
+    if (!state.started || state.muted) return;
+    const level = Math.min(1, Math.max(0, Number(intensity) || 0));
+    const now = performance.now();
+    if (level < 0.15 || now - state.whooshAt < 180) return;
+    state.whooshAt = now;
+    if (!state.whoosh) state.whoosh = whooshBuffer(state.ctx, {});
+    const source = state.ctx.createBufferSource();
+    source.buffer = state.whoosh;
+    const gainNode = state.ctx.createGain();
+    gainNode.gain.value = 0.32 * level;
+    source.connect(gainNode).connect(state.master);
+    source.start();
+  }
+
+  /** 地标建造的一声：石凿 / 夯土 / 木构 / 钢构（自带节流，避免连击）。 */
+  let lastBuildAt = 0;
+  function construction(kind = 'brick') {
+    if (!state.started || state.muted) return;
+    const now = performance.now();
+    if (now - lastBuildAt < 170) return;
+    lastBuildAt = now;
+    const bufferKind = kind === 'burn' ? 'rammed' : kind;
+    if (!state.buildBuffers.has(bufferKind)) {
+      state.buildBuffers.set(bufferKind, buildStrikeBuffer(state.ctx, bufferKind));
+    }
+    const source = state.ctx.createBufferSource();
+    source.buffer = state.buildBuffers.get(bufferKind);
+    if (kind === 'burn') source.playbackRate.value = 0.62;
+    const gainNode = state.ctx.createGain();
+    gainNode.gain.value = kind === 'burn' ? 0.75 : 0.5;
+    source.connect(gainNode).connect(state.master);
+    source.start();
   }
 
   function applyGain(multiplier, seconds = 0.8) {
@@ -156,10 +267,15 @@ export function createAmbience() {
 
   return {
     start,
+    setManifest,
     setMuted,
     setVolume,
     duck,
     unduck,
+    sting,
+    whoosh,
+    construction,
+    setMood,
     started: () => state.started,
     asset: () => state.assetUsed || '合成风声/水声',
   };

@@ -41,17 +41,34 @@
     <div id="dynasty-labels" aria-hidden="true"></div>
 
     <div id="millennium-bar" class="hidden">
-      <div class="mb-line">
-        <button id="millennium-prev" type="button" title="上一个时期">◀</button>
-        <strong id="millennium-era-name">唐</strong>
-        <span id="millennium-era-meta"></span>
-        <span id="millennium-position" class="mb-position"></span>
-        <button id="millennium-next" type="button" title="下一个时期">▶</button>
-        <button id="millennium-strata-toggle" type="button">历史地层</button>
+      <div class="mb-head">
+        <div class="mb-year" id="mt-year">公元 750 年</div>
+        <div class="mb-era">
+          <strong id="millennium-era-name">唐</strong>
+          <span id="millennium-era-meta"></span>
+          <span id="millennium-position" class="mb-position"></span>
+        </div>
+      </div>
+      <div class="mb-chain" id="mt-chain"></div>
+      <div class="mb-track">
+        <div id="mt-bands"></div>
+        <div id="mt-events"></div>
+        <input id="mt-range" type="range" min="-221" max="2026" step="1" value="750" aria-label="年份" />
+      </div>
+      <div class="mb-controls">
+        <button id="millennium-prev" type="button">◀ 上一朝</button>
+        <button id="millennium-autoplay" type="button">▶ 千年一刻</button>
+        <label class="mb-check"><input id="millennium-narrate" type="checkbox" /> 解说</label>
+        <label class="mb-check"><input id="millennium-ghosts" type="checkbox" checked /> 残影全开</label>
+        <button id="millennium-screen-toggle" type="button" class="on">银幕</button>
+        <button id="millennium-diorama-toggle" type="button" class="on">城郭</button>
+        <button id="millennium-strata-toggle" type="button" class="on">地层柱</button>
+        <button id="millennium-next" type="button">下一朝 ▶</button>
         <button id="millennium-exit" type="button">返回沙盘</button>
       </div>
-      <div id="millennium-timeline"></div>
     </div>
+    <div id="millennium-event" class="hidden"></div>
+    <div id="millennium-strata-label" style="display: none"></div>
     <div id="millennium-labels" aria-hidden="true"></div>
     <div id="millennium-veil"></div>
     <aside id="millennium-card" class="glass hidden">
@@ -64,15 +81,6 @@
       </header>
       <div id="mc-body"></div>
     </aside>
-    <aside id="millennium-strata" class="hidden">
-      <header>
-        <strong>历史地层</strong>
-        <span class="muted">一期一层，点击跳转</span>
-        <button id="millennium-strata-close" type="button">✕</button>
-      </header>
-      <div id="millennium-strata-list"></div>
-    </aside>
-
 
 
     <div id="live2d-stage">
@@ -463,6 +471,7 @@
       </div>
     </div>
 
+    <div id="voice-hint" class="hidden">🔊 点一下页面任意处，语音就来了</div>
     <div id="toast"></div>
     <div id="loading">正在铺陈幕布…</div>
 

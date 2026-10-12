@@ -16,12 +16,52 @@ from __future__ import annotations
 from math import asin, cos, radians, sin, sqrt
 
 from .dynasties import DYNASTIES, MILLENNIUM_META, get_dynasty
+from .millennium_events import city_events
+from .millennium_landmarks import landmark_timeline
 
 # 60km 内的最近地名只作「就近参考」；超过这个距离就承认此地此朝没有记载
 NEAR_KM = 60.0
 
 # 精选十城：演示镜头与内容补洞重点（其余城市全量自动聚合）
 PREMIUM_CITIES = ("西安", "洛阳", "北京", "南京", "成都", "杭州", "苏州", "敦煌", "泉州", "开封")
+
+# 连续时间轴的分段：单调节段（相邻两段的交界处做形变混合），与各朝官方年代略有出入，
+# 期卡仍显示各朝自己的 period 文本。
+_BAND_SPANS: list[tuple[str, int, int]] = [
+    ("qin", -221, -206),
+    ("han", -206, 220),
+    ("sanguo", 220, 280),
+    ("jin", 280, 589),
+    ("sui", 589, 618),
+    ("tang", 618, 907),
+    ("song", 907, 1279),
+    ("yuan", 1279, 1368),
+    ("ming", 1368, 1644),
+    ("qing", 1644, 1912),
+    ("modern", 1912, 0),  # end = 今年，构建时间轴时补齐
+]
+
+# 跨段时的形变混合窗口（年）
+BLEND_YEARS = 12
+
+
+def build_bands(now_year: int) -> list[dict]:
+    """年代分带：连续时间轴的坐标系（-221 → 今年）。"""
+
+    bands = []
+    for key, start, end in _BAND_SPANS:
+        dynasty = DYNASTIES.get(key) or {}
+        bands.append(
+            {
+                "key": key,
+                "name": dynasty.get("name") or key,
+                "start": start,
+                "end": end or now_year,
+                "color": dynasty.get("color") or "#d8b46a",
+                "period": dynasty.get("period") or "",
+            }
+        )
+    return bands
 
 # 策展补注：键是今名，值是「时期 key → 条目」。
 # 条目字段：ancient（当期古名）、summary（一句话）、note（说明）、kind（可选，默认 state）。
@@ -227,8 +267,13 @@ def _era_entry(key: str, dynasty: dict, name: str, lng: float, lat: float) -> di
     }
 
 
-def build_payload(name: str, lng: float, lat: float) -> dict:
-    """千年聚合：一个今名 + 坐标 → 秦到现代 11 期逐期「这里是什么地方」。"""
+def build_payload(name: str, lng: float, lat: float, landmark_key: str | None = None) -> dict:
+    """千年聚合：一个今名 + 坐标 → 秦到现代 11 期逐期「这里是什么地方」。
+
+    landmark_key 可选：带上时返回该地标的建造年表（千年模式据此演"随史建造"）。
+    """
+
+    import datetime
 
     eras = []
     matched_count = 0
@@ -240,9 +285,16 @@ def build_payload(name: str, lng: float, lat: float) -> dict:
         if entry["matched"]:
             matched_count += 1
         eras.append(entry)
+    named = city_events(name)
+    bands = build_bands(datetime.date.today().year)
     return {
         "city": {"name": name, "lng": lng, "lat": lat},
         "featured": name in PREMIUM_CITIES,
         "counts": {"matched": matched_count, "total": len(eras)},
         "eras": eras,
+        "bands": bands,
+        "bounds": {"start": bands[0]["start"], "end": bands[-1]["end"], "blend_years": BLEND_YEARS},
+        "headline": named["headline"],
+        "events": named["events"],
+        "landmark": landmark_timeline(landmark_key) if landmark_key else None,
     }

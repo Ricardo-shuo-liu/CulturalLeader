@@ -9,6 +9,15 @@ from fastapi.testclient import TestClient
 
 from backend.app.data import dynasties as dynasty_data
 from backend.app.data import millennium as millennium_data
+from backend.app.data.millennium_events import EVENTS as MILLENNIUM_EVENTS
+from backend.app.data.millennium_landmarks import (
+    ALWAYS_PRESENT,
+    LANDMARK_TIMELINES,
+    VALID_ACTIONS,
+    VALID_GAPS,
+    VALID_KINDS,
+    landmark_timeline,
+)
 from backend.app.main import app
 from backend.app.services import flow_store, guide_builder, guide_store
 
@@ -115,6 +124,153 @@ def test_empty_eras_explain_why():
     assert empties, "乌鲁木齐在多数时期应是空档"
     for era in empties:
         assert era["note"] in {"此朝疆域未及此地", "此朝此地暂无记载"}
+
+
+def test_bands_cover_a_continuous_timeline():
+    """连续时间轴：11 段无缝、单调，边界窗口为 12 年。"""
+
+    bands = millennium_data.build_bands(2026)
+    assert len(bands) == 11
+    assert bands[0]["start"] == -221
+    assert bands[-1]["end"] == 2026
+    for index, band in enumerate(bands):
+        assert band["end"] > band["start"], f"{band['key']} 区间异常"
+        assert band["name"] and band["color"] and band["period"]
+        if index:
+            assert band["start"] == bands[index - 1]["end"], f"{band['key']} 与前一段不连续"
+    assert millennium_data.BLEND_YEARS == 12
+
+
+@pytest.mark.parametrize("name", millennium_data.PREMIUM_CITIES)
+def test_featured_city_events_are_complete(name: str):
+    """十城各 8+ 条事件：年份单调、正文与解说词齐全、都落在时间轴范围内。"""
+
+    named = MILLENNIUM_EVENTS.get(name)
+    assert named, f"{name} 缺事件数据"
+    assert named.get("headline"), f"{name} 缺 headline"
+    events = named.get("events") or []
+    assert len(events) >= 8, f"{name} 事件只有 {len(events)} 条"
+    years = [event[0] for event in events]
+    assert years == sorted(years), f"{name} 事件年份未升序"
+    bands = millennium_data.build_bands(2026)
+    for year, title, text, narration in events:
+        assert bands[0]["start"] <= year <= bands[-1]["end"], f"{name}/{year} 越界"
+        assert title and text and narration, f"{name}/{year} 字段缺失"
+
+
+def test_payload_includes_events_and_bands(client: TestClient):
+    response = client.get("/api/dynasty/millennium", params={"name": "西安", "lng": 108.94, "lat": 34.34})
+    payload = response.json()
+    assert payload["bounds"]["start"] == -221 and payload["bounds"]["blend_years"] == 12
+    assert len(payload["bands"]) == 11
+    assert payload["headline"]
+    assert len(payload["events"]) >= 8
+    assert payload["events"][0]["year"] <= payload["events"][-1]["year"]
+    # 非精选城市：事件为空但结构完整
+    other = client.get("/api/dynasty/millennium", params={"name": "乌鲁木齐", "lng": 87.62, "lat": 43.83}).json()
+    assert other["events"] == [] and other["headline"] == ""
+
+
+def test_config_exposes_ambience_and_voice_policy(client: TestClient):
+    """环境音素材清单（缺文件为 null，不再盲探 404）与语音策略开关。"""
+
+    config = client.get("/api/config").json()
+    assert set(config["ambience"]) == {"wind", "water", "guqin"}
+    for value in config["ambience"].values():
+        assert value is None or value.startswith("/assets/audio/")
+    # 语音策略与 TTS 就绪状态严格相反（云端就绪就不允许 espeak 兜底）
+    assert config["allow_browser_voice"] is (not config["tts_ready"])
+
+
+# 前端 38 座地标的 key（landmarks.js 的 5 座种子 + landmarks-cn.js 的 33 座）
+LANDMARK_KEYS = {
+    "tiantan",
+    "pearl",
+    "canton_tower",
+    "bell_tower",
+    "panda_tower",
+    "tianjin_eye",
+    "chongqing_hongyadong",
+    "shijiazhuang_zhaozhou",
+    "taiyuan_twin_pagoda",
+    "hohhot_yurt",
+    "shenyang_palace",
+    "changchun_palace",
+    "harbin_sophia",
+    "nanjing_gate",
+    "hangzhou_leifeng",
+    "hefei_gate",
+    "fuzhou_white_pagoda",
+    "nanchang_tengwang",
+    "jinan_chaoran",
+    "zhengzhou_erqi",
+    "wuhan_yellow_crane",
+    "changsha_tianxin",
+    "nanning_hall",
+    "haikou_arcade",
+    "guiyang_jiaxiu",
+    "kunming_jinma",
+    "lhasa_potala",
+    "lanzhou_bridge",
+    "xining_kumbum",
+    "yinchuan_mosque",
+    "urumqi_bazaar",
+    "hongkong_skyline",
+    "macau_ruins",
+    "taipei_101",
+    "luoyang_longmen",
+    "dunhuang_mogao",
+    "guilin_karst",
+    "suzhou_pagoda",
+}
+
+
+def test_landmark_timelines_cover_every_model():
+    """38 座模型逐一有年表；阶段升序、跨度为正、动作与工种合法、始终在场类不演建造。"""
+
+    assert set(LANDMARK_TIMELINES) == LANDMARK_KEYS, "年表与前端地标清单必须一一对应"
+    bands = millennium_data.build_bands(2026)
+    for key, entry in LANDMARK_TIMELINES.items():
+        timeline = landmark_timeline(key)
+        assert timeline and timeline["key"] == key
+        assert timeline["kind"] in VALID_KINDS, f"{key} 工种非法：{timeline['kind']}"
+        phases = timeline["phases"]
+        if timeline["always"]:
+            assert phases == [], f"{key} 是常在类，不应有建造阶段"
+            continue
+        assert phases, f"{key} 缺少建造阶段"
+        years = [phase["year"] for phase in phases]
+        assert years == sorted(years), f"{key} 阶段未升序"
+        for phase in phases:
+            assert phase["span"] > 0, f"{key} 跨度必须为正"
+            assert phase["action"] in VALID_ACTIONS, f"{key} 动作非法：{phase['action']}"
+            assert phase["gap"] in VALID_GAPS, f"{key} 空档语义非法：{phase['gap']}"
+            assert phase["label"], f"{key} 阶段缺说明"
+            assert bands[0]["start"] <= phase["year"] <= bands[-1]["end"], f"{key}/{phase['year']} 越界"
+        if any(phase["action"] == "burn" for phase in phases):
+            first_burn = next(index for index, phase in enumerate(phases) if phase["action"] == "burn")
+            assert first_burn > 0, f"{key} 焚毁前必须有建造阶段"
+
+
+def test_millennium_api_returns_landmark_timeline(client: TestClient):
+    with_key = client.get(
+        "/api/dynasty/millennium",
+        params={"name": "武汉", "lng": 114.30, "lat": 30.60, "landmark_key": "wuhan_yellow_crane"},
+    ).json()
+    assert with_key["landmark"] and with_key["landmark"]["key"] == "wuhan_yellow_crane"
+    phases = with_key["landmark"]["phases"]
+    assert [phase["action"] for phase in phases] == ["build", "rebuild"], "黄鹤楼应有始建与重建两段"
+    without = client.get(
+        "/api/dynasty/millennium", params={"name": "武汉", "lng": 114.30, "lat": 30.60}
+    ).json()
+    assert without["landmark"] is None
+    unknown = client.get(
+        "/api/dynasty/millennium",
+        params={"name": "武汉", "lng": 114.30, "lat": 30.60, "landmark_key": "not_a_key"},
+    ).json()
+    assert unknown["landmark"] is None
+    always = landmark_timeline("hohhot_yurt")
+    assert always["always"] is True and always["kind"] in ALWAYS_PRESENT
 
 
 def test_millennium_api_and_validation(client: TestClient):
