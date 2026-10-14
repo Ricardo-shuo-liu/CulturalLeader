@@ -1,0 +1,28 @@
+# ── 密钥与本机数据：绝不进镜像 ──
+.env
+.env.local
+data/
+tests_artifacts/
+.pytest_cache/
+*.log
+
+# ── 版本控制与编辑器 ──
+.git
+.gitignore
+.vscode/
+.agents/
+.codex/
+.aws/
+
+# ── 构建产物 / 本机工具链：镜像内重新下载或编译 ──
+.tools/
+node_modules/
+**/__pycache__/
+*.py[cod]
+frontend/vendor/
+LKH-3.0.14/LKH
+LKH-3.0.14/LKH.dSYM/
+LKH-3.0.14/SRC/OBJ/
+
+# ── Live2D 样例模型：授权仅限内部评估，不进镜像；运行时按需挂载 ──
+frontend/assets/live2d/model/

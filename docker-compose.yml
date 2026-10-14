@@ -1,0 +1,29 @@
+# CulturalLeader · 一键起服务
+#   cp .env.example .env    # 填 Key（全留空也能跑：本地 Mock + 浏览器语音）
+#   docker compose up -d --build
+#   打开 http://127.0.0.1:8000/ ，后台 /admin（默认令牌 dev-token）
+#
+# 环境变量全部由使用者提供：.env 不进镜像，只在本机被 compose 读取。
+services:
+  app:
+    build:
+      context: .
+      args:
+        # 国内网络可换成 https://mirrors.aliyun.com/pypi/simple/
+        PIP_INDEX_URL: ${PIP_INDEX_URL:-https://pypi.org/simple}
+    image: culturalleader:latest
+    container_name: culturalleader
+    ports:
+      - "${HOST_PORT:-8000}:8000"
+    # .env 不存在也能起（required: false）；所有 Key 都写在 .env 里，不进镜像
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      TZ: ${TZ:-Asia/Shanghai}
+    volumes:
+      # SQLite / 流程 / 攻略 / 导入 / TTS 缓存：持久化在本机 data/
+      - ./data:/app/data
+      # Live2D 形象：默认挂本机模型目录（只读）；不想用样例模型就注释掉这一行
+      - ./frontend/assets/live2d/model:/app/frontend/assets/live2d/model:ro
+    restart: unless-stopped

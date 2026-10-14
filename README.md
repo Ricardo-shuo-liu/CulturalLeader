@@ -37,6 +37,15 @@ python tools/vendor_frontend.py          # 一次性：把 three 拉到 frontend
 ./run.sh                                 # http://127.0.0.1:8000/
 ```
 
+也可以整包跑在 Docker 里（环境变量由你自己填 `.env`，镜像里不含任何 Key）：
+
+```bash
+cp .env.example .env                     # 填 Key；全留空也能跑（本地 Mock + 浏览器语音）
+docker compose up -d --build             # http://127.0.0.1:8000/ ，后台 /admin
+```
+
+镜像内已包含 three/Live2D 运行时与编译好的 LKH 求解器；详见 [docs/07-Docker 部署](docs/07-Docker%20部署.md)。
+
 - 端口被占用时 `run.sh` 会提示占用进程并自动顺延，`PORT=9000 ./run.sh` 可指定端口；
 - 后台在 <http://127.0.0.1:8000/admin>，默认令牌 `dev-token`（改 `.env` 里的 `ADMIN_TOKEN`）；
 - `.env` 里配 `OPENAI_API_KEY`（对话）、`TTS_*` / `ASR_*`（语音）、`TENCENT_MAP_*`（地图与通勤时长）；
@@ -52,6 +61,7 @@ python tools/vendor_frontend.py          # 一次性：把 three 拉到 frontend
 | [docs/04-语音与数字人](docs/04-语音与数字人.md) | TTS / ASR 配置、Live2D 换模型、数字人出现的场景 |
 | [docs/05-开发与校验](docs/05-开发与校验.md) | 目录结构、环境变量、脚本一览、全量校验、常见问题 |
 | [docs/06-千年与旅行电影](docs/06-千年与旅行电影.md) | 开场五段、千年模式的匹配规则与数据策展、旅行电影导出链路、皮相与环境音 |
+| [docs/07-Docker 部署](docs/07-Docker%20部署.md) | 镜像内容、三步起服务、环境变量、数据持久化、Live2D 与 LKH 说明、运维与常见问题 |
 | [docs/数字人（Live2D）接入说明](docs/数字人（Live2D）接入说明.md) | 模型配置细节与常见问题 |
 | [docs/Cubism5资源获取指南](docs/Cubism5资源获取指南.md) | 模型从哪来、怎么自制/委托、授权怎么算 |
 
