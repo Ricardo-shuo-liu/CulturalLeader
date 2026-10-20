@@ -16,6 +16,7 @@ from ..db import SessionLocal, get_db
 from ..models import ChatSession, City, Knowledge, Message
 from ..schemas import AsrResponse, ChatRequest
 from ..services import speech
+from ..services import rag
 from ..services.fay_human import build_audio_message, tts_url_for
 from ..services.llm import stream_reply
 
@@ -88,9 +89,19 @@ async def chat(payload: ChatRequest, db: Session = Depends(get_db)) -> Streaming
     history = history[:-1] if history else []
 
     city_snapshot = city
+    # RAG：用「城市名 + 问题」去本地非遗资料库检索，回答时带 [1][2] 引用
+    rag_hits = []
+    try:
+        query = f"{city_snapshot.name} {payload.message}".strip()
+        rag_hits = rag.search(query, top_k=get_settings().rag_top_k, min_score=12, region_weight=18)
+    except Exception as error:  # noqa: BLE001 检索失败不影响正常讲解
+        print(f"[rag] 检索失败：{error}")
+    rag_context = rag.build_context(rag_hits)
 
     async def event_stream() -> AsyncIterator[str]:
         yield sse("meta", {"session_id": session_id, "city": city_snapshot.slug})
+        if rag_hits:
+            yield sse("sources", {"items": rag.sources_payload(rag_hits)})
         buffer = ""
         collected: list[str] = []
         sentence_index = 0
@@ -111,7 +122,13 @@ async def chat(payload: ChatRequest, db: Session = Depends(get_db)) -> Streaming
             return [sse("human", message)]
 
         try:
-            async for delta in stream_reply(city_snapshot, knowledge, history, payload.message):
+            async for delta in stream_reply(
+                city_snapshot,
+                knowledge,
+                history,
+                payload.message,
+                rag_context=rag_context or None,
+            ):
                 collected.append(delta)
                 buffer += delta
                 sentences, buffer = split_sentences(buffer)

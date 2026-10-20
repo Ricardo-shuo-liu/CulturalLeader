@@ -9,12 +9,15 @@ from fastapi.staticfiles import StaticFiles
 
 from .config import FRONTEND_DIR
 from .db import init_db
-from .routers import admin, chat, cities, dynasty, flows, geo, guides, imports, route, system, trips
+from .routers import admin, chat, cities, dynasty, flows, geo, guides, imports, rag as rag_router, route, system, trips
+from .services import rag as rag_service
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     init_db()
+    # 非遗资料库 RAG：索引缺失/过期时后台重建，不阻塞启动
+    rag_service.warmup()
     yield
 
 
@@ -36,6 +39,7 @@ app.include_router(flows.router)
 app.include_router(guides.router)
 app.include_router(imports.router)
 app.include_router(dynasty.router)
+app.include_router(rag_router.router)
 app.include_router(geo.router)
 app.include_router(admin.router)
 

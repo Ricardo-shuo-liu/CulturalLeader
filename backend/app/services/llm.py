@@ -82,15 +82,22 @@ async def stream_reply(
     question: str,
     *,
     system_prompt: str | None = None,
+    rag_context: str | None = None,
 ) -> AsyncIterator[str]:
     """逐段产出回复文本。无 Key 时使用本地知识库拼装，行为对外一致。
 
     system_prompt 用于穿越系统等自定义人格场景；传入时优先使用，city 仅作为兜底资料。
+    rag_context 是本地非遗资料库检索出的参考片段（带 [1][2] 编号），拼在系统提示末尾。
     """
 
     settings = get_settings()
     if settings.mock:
         answer = mock_answer(city, knowledge, question)
+        if rag_context:
+            # 离线时也至少把检索到的第一条资料读出来，而不是答「资料有限」
+            first = rag_context.split("\n\n")[0].strip()
+            body = "\n".join(first.splitlines()[1:]).strip() or first
+            answer = f"{body[:220]}……（据本地非遗资料库）"
         step = 3
         for index in range(0, len(answer), step):
             yield answer[index : index + step]
@@ -100,9 +107,13 @@ async def stream_reply(
     from openai import AsyncOpenAI
 
     client = AsyncOpenAI(api_key=settings.openai_api_key, base_url=settings.base_url)
-    messages: list[dict[str, str]] = [
-        {"role": "system", "content": system_prompt or build_system_prompt(city, knowledge)}
-    ]
+    system = system_prompt or build_system_prompt(city, knowledge)
+    if rag_context:
+        system += (
+            "\n\n本地非遗资料库检索结果（优先采用；引用时在句末用 [1][2] 标注，"
+            "不要编造资料里没有的年份、数字或人名）：\n" + rag_context
+        )
+    messages: list[dict[str, str]] = [{"role": "system", "content": system}]
     for role, content in history[-6:]:
         messages.append({"role": role, "content": content})
     messages.append({"role": "user", "content": question})

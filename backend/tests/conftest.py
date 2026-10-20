@@ -12,6 +12,8 @@ TEST_DB = Path(tempfile.gettempdir()) / "culturalleader_test.db"
 
 os.environ["DATABASE_URL"] = f"sqlite:///{TEST_DB}"
 os.environ["MOCK_MODE"] = "on"
+# 默认关闭 RAG，避免对话测试依赖本地索引；RAG 专项测试会自行打开
+os.environ["RAG_ENABLED"] = "0"
 os.environ["ADMIN_TOKEN"] = "test-token"
 os.environ.pop("OPENAI_API_KEY", None)
 

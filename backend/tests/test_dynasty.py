@@ -120,7 +120,7 @@ def test_chat_streams_with_dynasty_prompt(client: TestClient, monkeypatch):
 
     captured: dict = {}
 
-    async def fake_stream(city, knowledge, history, question, *, system_prompt=None):
+    async def fake_stream(city, knowledge, history, question, *, system_prompt=None, rag_context=None):
         captured["prompt"] = system_prompt or ""
         captured["question"] = question
         for piece in ["长安", "一百零八坊，", "夜里坊门一闭就是另一番光景。"]:
@@ -149,7 +149,7 @@ def test_chat_session_is_dynasty_namespaced(client: TestClient, monkeypatch):
     from backend.app.models import ChatSession
     from backend.app.routers import dynasty as dynasty_router
 
-    async def fake_stream(city, knowledge, history, question, *, system_prompt=None):
+    async def fake_stream(city, knowledge, history, question, *, system_prompt=None, rag_context=None):
         yield "层峦叠嶂"
 
     monkeypatch.setattr(dynasty_router, "stream_reply", fake_stream)

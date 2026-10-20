@@ -47,6 +47,11 @@ class Settings(BaseSettings):
     flows_dir: str = str(DATA_DIR / "flows")
     imports_dir: str = str(DATA_DIR / "imports")
     guides_dir: str = str(DATA_DIR / "guides")
+    # 本地非遗资料库 RAG（asset/ → SQLite FTS5 索引）
+    rag_enabled: bool = True
+    rag_top_k: int = 6
+    rag_asset_dir: str = str(PROJECT_ROOT / "asset")
+    rag_dir: str = str(DATA_DIR / "rag")
 
     @property
     def tts_key(self) -> str:

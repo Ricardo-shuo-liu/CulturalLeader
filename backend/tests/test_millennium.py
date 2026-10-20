@@ -291,7 +291,7 @@ def test_dynasty_chat_accepts_anchor(client: TestClient, monkeypatch):
 
     captured: dict = {}
 
-    async def fake_stream(city, knowledge, history, question, *, system_prompt=None):
+    async def fake_stream(city, knowledge, history, question, *, system_prompt=None, rag_context=None):
         captured["prompt"] = system_prompt or ""
         yield "这里是长安。"
 

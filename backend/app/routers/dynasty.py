@@ -17,6 +17,7 @@ from ..data import millennium as millennium_data
 from ..db import SessionLocal, get_db
 from ..models import ChatSession, Message
 from ..services.fay_human import build_audio_message, tts_url_for
+from ..services import rag
 from ..services.llm import stream_reply
 from .chat import sse, split_sentences
 
@@ -104,9 +105,25 @@ async def dynasty_chat(key: str, payload: DynastyChatRequest, db: Session = Depe
 
     system_prompt = dynasty_data.build_system_prompt(dynasty, place=place, poem=poem, anchor=payload.anchor)
     speaker = dynasty
+    # RAG：用「时期 + 当前地点/诗词 + 问题」检索本地非遗资料库，结果拼进系统提示
+    rag_hits = []
+    try:
+        query_parts = [dynasty.get("name", ""), dynasty.get("period", ""), payload.message]
+        if payload.anchor:
+            query_parts.insert(1, payload.anchor)
+        if place:
+            query_parts.insert(1, f"{place.get('ancient', '')} {place.get('modern', '')}")
+        if poem:
+            query_parts.insert(1, f"{poem.get('title', '')} {poem.get('author', '')}")
+        rag_hits = rag.search(" ".join(part for part in query_parts if part), top_k=4, min_score=12, region_weight=0)
+    except Exception as error:  # noqa: BLE001 检索失败不影响朝代讲解
+        print(f"[rag] 朝代检索失败：{error}")
+    rag_context = rag.build_context(rag_hits, max_chars=1600)
 
     async def event_stream() -> AsyncIterator[str]:
         yield sse("meta", {"session_id": session_id, "dynasty": dynasty["key"], "context": context_key})
+        if rag_hits:
+            yield sse("sources", {"items": rag.sources_payload(rag_hits)})
         buffer = ""
         collected: list[str] = []
         sentence_index = 0
@@ -133,6 +150,7 @@ async def dynasty_chat(key: str, payload: DynastyChatRequest, db: Session = Depe
                 history,
                 payload.message,
                 system_prompt=system_prompt,
+                rag_context=rag_context or None,
             ):
                 collected.append(delta)
                 buffer += delta
