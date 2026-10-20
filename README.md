@@ -21,6 +21,7 @@
 | 沙盘与日照 | 340×196 浮雕地形 + 敦煌壁画地台；逐片元按真实经纬度计算昼夜与晨昏线，可拖动时间滑块演示 |
 | 城市与地标 | 369 座城市按视野分级标注；38 座城市有程序化 3D 地标，同原型靠专属部件区分 |
 | 数字人与语音 | Live2D（迁移自 Fay）+ 云端 TTS / ASR，大模型对话贯穿沙盘、流程编辑与穿越模式 |
+| 非遗知识库 RAG | `asset/` 60,758 块本地索引（SQLite FTS5），回答附 `[1][2]` 引用与「参考资料」行，离线可用 |
 | 行程规划 | 双击城市 → 腾讯地图编排点位 → LKH-TSPTW 重优化 → 计划块 → 整体攻略 → 只读分享页 |
 | 播放推演 | 旅行者光点按时间表推进，昼夜层与晨昏线随模拟时刻扫过，支持整份攻略多天连播 |
 | 一块土地的千年 | 城市卡进入：连续年份轴（前 221 → 今）拖过两千年，疆域像墨迹一样连续生长/收缩，前朝残影层层累积；**360° 剪影环幕**（围绕地图一圈的环形剧场，日月按真实方位角挂幕上，工匠与脚手架随年份施工）、**38 座地标随史建造**（分 14 层从脚手架里长出来，焚毁 / 重建 / 迁建按史实演）、3D 地层柱（层厚 = 朝代年数）、事件年表与当朝人解说、「千年一刻」自动播放 |
@@ -44,7 +45,7 @@ cp .env.example .env                     # 填 Key；全留空也能跑（本地
 docker compose up -d --build             # http://127.0.0.1:8000/ ，后台 /admin
 ```
 
-镜像内已包含 three/Live2D 运行时与编译好的 LKH 求解器；详见 [docs/07-Docker 部署](docs/07-Docker%20部署.md)。
+镜像内已包含 three/Live2D 运行时与编译好的 LKH 求解器；详见 [docs/08-Docker 部署](docs/08-Docker%20部署.md)。
 
 - 端口被占用时 `run.sh` 会提示占用进程并自动顺延，`PORT=9000 ./run.sh` 可指定端口；
 - 后台在 <http://127.0.0.1:8000/admin>，默认令牌 `dev-token`（改 `.env` 里的 `ADMIN_TOKEN`）；
@@ -60,8 +61,9 @@ docker compose up -d --build             # http://127.0.0.1:8000/ ，后台 /adm
 | [docs/03-穿越系统](docs/03-穿越系统.md) | 秦 → 现代 11 个时期：示意疆域、历史地名名牌、光韵诗字、朝代对话、懒加载 |
 | [docs/04-语音与数字人](docs/04-语音与数字人.md) | TTS / ASR 配置、Live2D 换模型、数字人出现的场景 |
 | [docs/05-开发与校验](docs/05-开发与校验.md) | 目录结构、环境变量、脚本一览、全量校验、常见问题 |
+| [docs/07-RAG知识库](docs/07-RAG知识库.md) | 非遗资料库结构、FTS5 索引、检索策略、引用来源与对话接入 |
 | [docs/06-千年与旅行电影](docs/06-千年与旅行电影.md) | 开场五段、千年模式的匹配规则与数据策展、旅行电影导出链路、皮相与环境音 |
-| [docs/07-Docker 部署](docs/07-Docker%20部署.md) | 镜像内容、三步起服务、环境变量、数据持久化、Live2D 与 LKH 说明、运维与常见问题 |
+| [docs/08-Docker 部署](docs/08-Docker%20部署.md) | 镜像内容、三步起服务、环境变量、数据持久化、Live2D 与 LKH 说明、运维与常见问题 |
 | [docs/数字人（Live2D）接入说明](docs/数字人（Live2D）接入说明.md) | 模型配置细节与常见问题 |
 | [docs/Cubism5资源获取指南](docs/Cubism5资源获取指南.md) | 模型从哪来、怎么自制/委托、授权怎么算 |
 
@@ -70,6 +72,8 @@ docker compose up -d --build             # http://127.0.0.1:8000/ ，后台 /adm
 ```
 backend/app        FastAPI（城市/对话/语音/流程/攻略/穿越/后台）+ SQLite
 backend/app/data   内置数据（城市、地级市、省界、历史时期：秦→现代 11 期的疆域、地名与诗词）
+asset/             非遗资料库（head/waist/tail 三层 JSONL，RAG 数据源，不进索引）
+data/rag/          生成的 RAG 索引（SQLite FTS5，不进 git）
 backend/tests      pytest：接口、后台鉴权、Mock 降级、穿越数据与对话
 frontend/js        舞台渲染、浮雕地形、天文日照、地标、语音
 frontend/js/map    城内地图、城市流程、整体攻略、播放推演、穿越模式、诗词光韵
@@ -84,11 +88,12 @@ data/              本机数据（flows / guides / imports / tts_cache，不进 
 ## 校验
 
 ```bash
-./tools/check_all.sh                     # 后端 103 项 + 前端 53 项 + 全部 JS 语法
+./tools/check_all.sh                     # 后端 111 项 + 前端 53 项 + 全部 JS 语法
 ./run.sh &                               # 另开终端启动服务，然后跑浏览器端到端：
 python tools/browser_check.py            # 沙盘 / 数字人 / 路线 / 省份点击
 python tools/browser_check_flows.py      # 双击城市 → 流程编辑 → 优化 → 攻略 → 分享页
 python tools/browser_check_dynasty.py    # 穿越系统：秦→现代 11 期底图、地名名牌、光韵诗字、朝代对话
+python tools/browser_check_rag.py        # RAG：本地非遗检索 → 数字人回答 → 参考资料行
 python tools/browser_check_millennium.py # 开场五段 + 千年：连续年份 / 疆域形变 / 残影 / 地层柱 / 环幕 / 地标随史建造 / 事件闪光 / 自动播放 / 语音策略
 python tools/browser_check_movie.py      # 旅行电影：真录一段 WebM，落盘 tests_artifacts/旅行电影.webm
 ```
