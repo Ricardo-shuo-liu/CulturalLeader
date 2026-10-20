@@ -540,16 +540,21 @@ def main() -> int:
         )
         ActionChains(driver).move_to_element(driver.find_element("id", "planner-chat-send")).click().perform()
         answer = ""
-        for _ in range(40):
-            time.sleep(0.5)
+        mouth = None
+        mouth_seen = False
+        # 一边等回答一边采样口型：TTS 可能在回答文本刚到位时就播完了，不能只在最后探一次
+        for _ in range(60):
+            time.sleep(0.35)
             answer = driver.execute_script("return window.__cl.panelChat().last || ''")
-            if answer:
+            mouth = driver.execute_script("return window.__cl.humanProbe()")
+            if mouth and (mouth.get("speaking") or (mouth.get("mouthValue") or 0) > 0.02):
+                mouth_seen = True
+            if answer and mouth_seen:
                 break
         check("真实点击发送 → 数字人回答出现在面板里", len(answer) > 8, answer[:60])
-        mouth = driver.execute_script("return window.__cl.humanProbe()")
         check(
             "规划面板里数字人会开口说话",
-            bool(mouth and (mouth.get("speaking") or (mouth.get("mouthValue") or 0) > 0.02)),
+            mouth_seen,
             f"口型={mouth.get('mouthValue') if mouth else None} speaking={mouth.get('speaking') if mouth else None}",
         )
 

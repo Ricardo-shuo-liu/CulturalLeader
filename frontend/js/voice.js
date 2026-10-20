@@ -153,6 +153,9 @@ export class VoiceIO {
         if (!event) continue;
         if (event.event === 'meta') {
           session = event.data.session_id || session;
+        } else if (event.event === 'sources') {
+          // RAG 引用来源：卡片/面板里显示「参考资料：1.《…》 2.《…》」
+          this.handlers.onSources?.(event.data.items || []);
         } else if (event.event === 'token') {
           this.handlers.onToken?.(event.data.text);
         } else if (event.event === 'sentence') {

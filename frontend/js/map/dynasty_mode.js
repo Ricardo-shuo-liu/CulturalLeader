@@ -707,6 +707,22 @@ export function createDynastyMode({
     return true;
   }
 
+  /** RAG 引用来源：卡片里追加「参考资料：1.《…》」 */
+  function onSources(items) {
+    if (!state.streaming || !items?.length) return false;
+    const titles = items.slice(0, 3).map((source, index) => `${index + 1}.《${source.title}》`);
+    const node = addLog('sources', `参考资料：${titles.join('  ')}`);
+    if (node) {
+      node.title = items
+        .map(
+          (source, index) =>
+            `[${index + 1}] ${source.title} · ${source.tier_label || source.tier} · ${source.category || ''} ${source.region || ''}`,
+        )
+        .join('\n');
+    }
+    return true;
+  }
+
   // ── 相机与列表 ──────────────────────────────────────────────
 
   function focusOn(lng, lat, distance = 2.1) {
@@ -871,6 +887,7 @@ export function createDynastyMode({
     onSentence,
     onDone,
     onError,
+    onSources,
     openPlace,
     openPoem,
     glowScreen: (id) => {

@@ -152,6 +152,24 @@ export function createUI({ cities, handlers = {} }) {
     return item;
   }
 
+  /** RAG 引用来源：在城市讲解面板里追加一行「参考资料」。 */
+  function addSources(items) {
+    if (!items?.length) return null;
+    const item = document.createElement('div');
+    item.className = 'chat-sources';
+    const titles = items.slice(0, 3).map((source, index) => `${index + 1}.《${source.title}》`);
+    item.textContent = `参考资料：${titles.join('  ')}`;
+    item.title = items
+      .map(
+        (source, index) =>
+          `[${index + 1}] ${source.title} · ${source.tier_label || source.tier} · ${source.category || ''} ${source.region || ''}`,
+      )
+      .join('\n');
+    chatLog.appendChild(item);
+    chatLog.scrollTop = chatLog.scrollHeight;
+    return item;
+  }
+
   return {
     labels,
     toast,
@@ -281,6 +299,7 @@ export function createUI({ cities, handlers = {} }) {
       return panel.classList.contains('show');
     },
     addChat,
+    addSources,
     beginAssistant() {
       currentAssistant = addChat('assistant', '');
       return currentAssistant;

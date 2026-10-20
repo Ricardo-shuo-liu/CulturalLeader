@@ -73,6 +73,22 @@ export function createPanelChat({ onAsk, onMicStart, onMicEnd } = {}) {
     if (text) add('system', text);
   }
 
+  /** RAG 引用来源：在「问数字人」小面板里追加一行参考资料。 */
+  function addSources(items) {
+    if (!items?.length) return null;
+    const titles = items.slice(0, 3).map((source, index) => `${index + 1}.《${source.title}》`);
+    const row = add('sources', `参考资料：${titles.join('  ')}`);
+    if (row) {
+      row.title = items
+        .map(
+          (source, index) =>
+            `[${index + 1}] ${source.title} · ${source.tier_label || source.tier} · ${source.category || ''} ${source.region || ''}`,
+        )
+        .join('\n');
+    }
+    return row;
+  }
+
   async function send() {
     const text = input?.value.trim();
     if (!text || !onAsk) return;
@@ -140,6 +156,7 @@ export function createPanelChat({ onAsk, onMicStart, onMicEnd } = {}) {
     setCity,
     addUser,
     addSystem,
+    addSources,
     begin,
     appendToken,
     setSpeech,

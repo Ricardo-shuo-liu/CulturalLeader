@@ -581,6 +581,12 @@ async function boot() {
     },
     onRecognizeError: (message) => ui.toast(message),
     onHuman: (message) => human.playAction(message?.Data?.Action),
+    onSources: (items) => {
+      // 穿越卡片自己显示参考资料；城市/规划面板走通用 UI
+      if (dynastyMode.onSources(items)) return;
+      ui.addSources(items);
+      panelChat?.addSources(items);
+    },
     onAutoplayBlocked: (text) => {
       // 没有用户手势，浏览器不肯出声：先把这句话存住，点任意处后自动补播
       blockedSpeech = text;
