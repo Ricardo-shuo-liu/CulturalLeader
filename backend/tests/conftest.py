@@ -3,14 +3,17 @@
 from __future__ import annotations
 
 import os
+import shutil
 import tempfile
 from pathlib import Path
 
 import pytest
 
 TEST_DB = Path(tempfile.gettempdir()) / "culturalleader_test.db"
+TEST_ATELIER = Path(tempfile.gettempdir()) / "culturalleader_test_atelier"
 
 os.environ["DATABASE_URL"] = f"sqlite:///{TEST_DB}"
+os.environ["ATELIER_DIR"] = str(TEST_ATELIER)
 os.environ["MOCK_MODE"] = "on"
 # 默认关闭 RAG，避免对话测试依赖本地索引；RAG 专项测试会自行打开
 os.environ["RAG_ENABLED"] = "0"
@@ -22,6 +25,10 @@ os.environ.pop("OPENAI_API_KEY", None)
 def fresh_database():
     if TEST_DB.exists():
         TEST_DB.unlink()
+    if TEST_ATELIER.exists():
+        shutil.rmtree(TEST_ATELIER, ignore_errors=True)
     yield
     if TEST_DB.exists():
         TEST_DB.unlink()
+    if TEST_ATELIER.exists():
+        shutil.rmtree(TEST_ATELIER, ignore_errors=True)

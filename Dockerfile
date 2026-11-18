@@ -43,7 +43,7 @@ ENV PYTHONUNBUFFERED=1 \
 
 # 时区（日照与时间戳按本地时区显示；容器不装 tzdata 会退回 UTC）
 RUN apt-get update \
- && apt-get install -y --no-install-recommends tzdata \
+ && apt-get install -y --no-install-recommends tzdata fonts-noto-cjk \
  && rm -rf /var/lib/apt/lists/* \
  && ln -snf /usr/share/zoneinfo/$TZ /etc/localtime \
  && echo $TZ > /etc/timezone

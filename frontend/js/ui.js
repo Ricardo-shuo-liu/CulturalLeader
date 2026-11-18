@@ -40,6 +40,7 @@ export function createUI({ cities, handlers = {} }) {
   const slider = $('tb-slider');
   const liveButton = $('tb-live');
   const panel = $('panel');
+  const luoyangEntry = $('panel-luoyang');
   const chatLog = $('chat-log');
   const chatInput = $('chat-input');
   const micButton = $('mic-btn');
@@ -135,6 +136,10 @@ export function createUI({ cities, handlers = {} }) {
   });
   micButton.addEventListener('pointerleave', () => stopRecording());
   micButton.addEventListener('pointercancel', () => stopRecording());
+
+  function setLuoyangEntry(show) {
+    luoyangEntry?.classList.toggle('hidden', !show);
+  }
 
   function toast(message) {
     toastElement.textContent = message;
@@ -283,6 +288,7 @@ export function createUI({ cities, handlers = {} }) {
     },
     showPanel(city) {
       panel.classList.add('show');
+      setLuoyangEntry(city.slug === 'luoyang');
       $('panel-name').textContent = city.name;
       $('panel-province').textContent = city.province || '';
       $('panel-tags').textContent = (city.tags || []).join(' · ');
@@ -295,6 +301,7 @@ export function createUI({ cities, handlers = {} }) {
     hidePanel() {
       panel.classList.remove('show');
     },
+    setLuoyangEntry,
     isPanelOpen() {
       return panel.classList.contains('show');
     },

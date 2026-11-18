@@ -17,6 +17,7 @@ import { createMovieExport } from './map/movie_export.js';
 import { createFlowEditor } from './map/flow_editor.js';
 import { createGuideBuilder } from './map/guide_builder.js';
 import { createPanelChat } from './panel_chat.js';
+import { createAtelier } from './atelier.js';
 import { createImportWizard } from './import_wizard.js';
 import { createIntro } from './intro.js';
 import { createAmbience } from './ambience.js';
@@ -124,6 +125,15 @@ async function boot() {
 
   const handlers = {};
   const ui = createUI({ cities, handlers });
+
+  // 全局像素造境入口：与导航同一套印章语言，打开全屏画室。
+  const atelier = createAtelier({ onOpen: () => toggleDrawer(false) });
+  window.__atelier = atelier;
+  document.getElementById('atelier-open')?.addEventListener('click', () => atelier.open());
+  document.getElementById('atelier-open-drawer')?.addEventListener('click', () => {
+    toggleDrawer(false);
+    atelier.open();
+  });
 
   // 语音 / 音频策略：/api/config 到位后回填（voice 稍后才创建，用 holder 承接）
   const audioPolicy = { allowBrowserVoice: true, musicUrls: [] };
@@ -736,6 +746,7 @@ async function boot() {
     backdropTarget = 1;
     ui.setActive(slug);
     ui.showPanel(city);
+    maybeShowLuoyangIntro(city.slug);
     voice.stopSpeaking();
     try {
       // 记住最后访问的城市：开场镜头结尾定格在这里
@@ -802,7 +813,98 @@ async function boot() {
     card.__city = city;
   }
 
+  let luoyangIntroTimer = null;
+
+  function hideLuoyangIntro() {
+    window.clearTimeout(luoyangIntroTimer);
+    luoyangIntroTimer = null;
+    document.getElementById('luoyang-intro')?.classList.add('hidden');
+  }
+
+  function markLuoyangIntroSeen() {
+    try {
+      window.sessionStorage.setItem('cl.luoyangIntro', 'seen');
+    } catch (error) {
+      /* 隐私模式下忽略 */
+    }
+  }
+
+  function maybeShowLuoyangIntro(slug) {
+    if (slug !== 'luoyang') {
+      hideLuoyangIntro();
+      return;
+    }
+    try {
+      if (window.sessionStorage.getItem('cl.luoyangIntro') === 'seen') return;
+    } catch (error) {
+      /* 忽略 */
+    }
+    window.clearTimeout(luoyangIntroTimer);
+    luoyangIntroTimer = window.setTimeout(() => {
+      if (activeCity?.slug !== 'luoyang') return;
+      document.getElementById('luoyang-intro')?.classList.remove('hidden');
+    }, 600);
+  }
+
+  function dismissLuoyangIntro() {
+    const silent = document.getElementById('li-silent');
+    if (!silent || silent.checked) markLuoyangIntroSeen();
+    hideLuoyangIntro();
+  }
+
+  function openPixelStage() {
+    const stage = document.getElementById('pixel-stage');
+    const frame = document.getElementById('pixel-stage-frame');
+    if (!stage || !frame) return;
+    if (!stage.classList.contains('hidden') && frame.getAttribute('src') === '/demo/longmen_park.html') return;
+    markLuoyangIntroSeen();
+    stage.classList.remove('hidden');
+    document.body.classList.add('pixel-mode');
+    frame.src = '/demo/longmen_park.html';
+    window.setTimeout(() => frame.focus(), 300);
+  }
+
+  function closePixelStage() {
+    const stage = document.getElementById('pixel-stage');
+    const frame = document.getElementById('pixel-stage-frame');
+    if (!stage) return;
+    stage.classList.add('hidden');
+    document.body.classList.remove('pixel-mode');
+    if (frame) {
+      frame.src = 'about:blank';
+      frame.removeAttribute('src');
+    }
+  }
+
+  function enterLuoyangPixel() {
+    markLuoyangIntroSeen();
+    hideLuoyangIntro();
+    openPixelStage();
+  }
+
+  document.getElementById('panel-luoyang-enter')?.addEventListener('click', enterLuoyangPixel);
+  document.getElementById('li-enter')?.addEventListener('click', enterLuoyangPixel);
+  document.getElementById('li-stay')?.addEventListener('click', dismissLuoyangIntro);
+  document.getElementById('li-close')?.addEventListener('click', dismissLuoyangIntro);
+  document.getElementById('pixel-stage-close')?.addEventListener('click', closePixelStage);
+  window.addEventListener('keydown', (event) => {
+    if (event.key !== 'Escape') return;
+    const stage = document.getElementById('pixel-stage');
+    if (stage && !stage.classList.contains('hidden')) {
+      event.preventDefault();
+      closePixelStage();
+      return;
+    }
+    const intro = document.getElementById('luoyang-intro');
+    if (intro && !intro.classList.contains('hidden')) {
+      event.preventDefault();
+      dismissLuoyangIntro();
+    }
+  });
+
   function closeCity() {
+    hideLuoyangIntro();
+    closePixelStage();
     activeCity = null;
     sessionId = null;
     backdropTarget = 0;
@@ -1303,9 +1405,10 @@ async function boot() {
 
     const dynastyActive = historyActive;
     cityLayer.setOpacity(dynastyActive || planner.isOpen() ? 0 : 0.9);
-    // 光点在屏幕上的大小基本恒定：相机拉近时按比例缩小，避免加色光斑铺满屏幕
-    const cameraDistance = camera.position.length();
-    cityLayer.setScale(Math.max(0.32, Math.min(1.15, cameraDistance / 6.4)));
+    // 光点在屏幕上的大小基本恒定：相机拉近时按比例缩小，避免加色光斑铺满屏幕。
+    // 用相机到视点的距离（而不是到世界原点的距离），飞到任何省份时光点大小都一致。
+    const cameraDistance = camera.position.distanceTo(controls.target);
+    cityLayer.setScale(Math.max(0.1, Math.min(1.15, cameraDistance / 6.4)));
     cityLayer.update(camera, now / 1000, window.innerWidth, window.innerHeight);
     // 城市图层标签统一放在渲染之后、和重点城市标签共用一套占位网格（见下方 labelMask）
     provinceLayer.update(dynastyActive ? Infinity : cityLayer.state.viewKm || Infinity);

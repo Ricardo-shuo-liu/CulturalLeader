@@ -7,6 +7,7 @@
     <link rel="stylesheet" href="/css/stage.css" />
     <link rel="stylesheet" href="/css/map_ui.css" />
     <link rel="stylesheet" href="/css/theme.css" />
+    <link rel="stylesheet" href="/css/atelier.css" />
     <script type="importmap">
       {
         "imports": {
@@ -97,10 +98,19 @@
         </div>
         <div class="panel-head-actions">
           <button id="panel-millennium" class="ghost-btn" type="button" title="锁定这座城市，看它两千年的样子">千年</button>
-          <button id="panel-plan" class="ghost-btn" type="button" title="进入这座城市的流程编辑">规划这座城市</button>
-          <button id="panel-close" class="ghost-btn" type="button">合拢幕布</button>
+          <button id="panel-plan" class="ghost-btn" type="button" title="进入这座城市的流程编辑">规划</button>
+          <button id="panel-close" class="ghost-btn panel-close" type="button" title="合拢幕布" aria-label="合拢幕布">✕</button>
         </div>
       </header>
+      <section id="panel-luoyang" class="panel-luoyang hidden" aria-label="像素龙门">
+        <div class="pl-art" aria-hidden="true"></div>
+        <div class="pl-copy">
+          <span class="pl-kicker">PIXEL LUOYANG</span>
+          <strong>龙门石窟 · 伊水公园</strong>
+          <p>沿着伊水东岸走一趟，把五处景点盖成一枚朱砂印。</p>
+          <button id="panel-luoyang-enter" class="primary" type="button">进入像素龙门</button>
+        </div>
+      </section>
       <p id="panel-summary" class="panel-summary"></p>
       <div class="panel-narration">
         <div class="label">讲解词</div>
@@ -355,6 +365,7 @@
     </div>
 
     <button id="nav-toggle" class="nav-toggle" type="button">☰ 导航</button>
+    <button id="atelier-open" class="atelier-toggle" type="button" title="一句话生成像素场景">造境</button>
     <div id="drawer-backdrop"></div>
     <aside id="drawer" class="glass">
       <header class="drawer-head">
@@ -364,6 +375,7 @@
 
       <section class="drawer-section">
         <h4>工具</h4>
+        <button id="atelier-open-drawer" class="drawer-btn primary" type="button">像素造境（一句话生成）</button>
         <button id="guide-open" class="drawer-btn primary" type="button">我的攻略（多城市组合）</button>
         <button id="planner-open" class="drawer-btn" type="button">流程编辑（当前城市）</button>
         <button id="route-btn" class="drawer-btn" type="button">路线规划（多城市巡游）</button>
@@ -469,6 +481,84 @@
           </div>
         </div>
       </div>
+    </div>
+
+    <div id="atelier" class="atelier hidden" role="dialog" aria-modal="true" aria-labelledby="atelier-title">
+      <div class="atelier-shell">
+        <header class="atelier-head">
+          <div>
+            <span class="atelier-kicker">PIXEL ATELIER</span>
+            <h2 id="atelier-title">像素造境</h2>
+          </div>
+          <button id="atelier-close" type="button" aria-label="关闭造境画室" title="关闭">✕</button>
+        </header>
+        <div class="atelier-body">
+          <section class="atelier-side">
+            <p class="atelier-lead">一句话，画一幅你的文旅像素场景。</p>
+            <div id="atelier-chat" class="atelier-chat" aria-live="polite"></div>
+            <label class="atelier-label" for="atelier-prompt">你想去哪里？</label>
+            <textarea id="atelier-prompt" maxlength="200" rows="3" placeholder="例如：洛阳龙门石窟，黄昏，伊水与崖壁大佛"></textarea>
+            <div id="atelier-examples" class="atelier-examples"></div>
+            <button id="atelier-generate" class="primary atelier-generate" type="button">生成</button>
+            <ol id="atelier-steps" class="atelier-steps">
+              <li data-step="intent" data-state="pending"><span class="dot"></span><b>理解描述</b><em></em></li>
+              <li data-step="search" data-state="pending"><span class="dot"></span><b>检索资料</b><em></em></li>
+              <li data-step="skill" data-state="pending"><span class="dot"></span><b>加载 Skill</b><em></em></li>
+              <li data-step="plan" data-state="pending"><span class="dot"></span><b>设计画面</b><em></em></li>
+              <li data-step="render" data-state="pending"><span class="dot"></span><b>绘制场景</b><em></em></li>
+              <li data-step="validate" data-state="pending"><span class="dot"></span><b>逐像素校验</b><em></em></li>
+            </ol>
+            <div id="atelier-sources" class="atelier-sources"></div>
+            <div id="atelier-error" class="atelier-error hidden" role="alert"></div>
+          </section>
+          <section class="atelier-preview">
+            <div class="atelier-frame">
+              <div id="atelier-empty" class="atelier-empty">
+                <span>造境</span>
+                <p>写下你想去的地方</p>
+              </div>
+              <img id="atelier-image" class="hidden" alt="生成的像素场景" />
+              <div id="atelier-loading" class="atelier-loading hidden"><span></span>正在造境…</div>
+            </div>
+            <div id="atelier-meta" class="atelier-meta hidden"></div>
+            <div id="atelier-actions" class="atelier-actions hidden">
+              <a id="atelier-download-scene" class="atelier-download" download>场景图</a>
+              <a id="atelier-download-postcard" class="atelier-download" download>明信片</a>
+              <a id="atelier-download-zip" class="atelier-download" download>打包 zip</a>
+              <button id="atelier-again" type="button">再画一张</button>
+            </div>
+            <div id="atelier-refine-row" class="atelier-refine hidden">
+              <input id="atelier-refine" maxlength="80" placeholder="再加一场雪 / 换成清晨" />
+              <button id="atelier-refine-go" type="button">继续润色</button>
+            </div>
+          </section>
+        </div>
+      </div>
+    </div>
+
+    <div id="luoyang-intro" class="luoyang-intro hidden" role="dialog" aria-modal="true" aria-labelledby="li-title">
+      <div class="li-card">
+        <button id="li-close" class="li-close" type="button" aria-label="关闭入画提示" title="关闭">✕</button>
+        <div class="li-art" aria-hidden="true"></div>
+        <span class="li-kicker">PIXEL LUOYANG</span>
+        <h3 id="li-title">龙门石窟 · 伊水公园</h3>
+        <p>沿着伊水东岸走一趟，把五处景点盖成一枚朱砂印。</p>
+        <div class="li-actions">
+          <button id="li-enter" class="li-primary" type="button">进入像素龙门</button>
+          <button id="li-stay" type="button">留在沙盘</button>
+        </div>
+        <label class="li-check"><input id="li-silent" type="checkbox" checked /> 本会话不再自动提示</label>
+      </div>
+    </div>
+
+    <div id="pixel-stage" class="pixel-stage hidden" role="dialog" aria-modal="true" aria-label="龙门石窟像素世界">
+      <div class="pixel-stage-bar">
+        <strong>龙门石窟 · 伊水公园</strong>
+        <span class="spacer"></span>
+        <a id="pixel-stage-new" href="/demo/longmen_park.html" target="_blank" rel="noopener">新窗口打开</a>
+        <button id="pixel-stage-close" type="button">返回沙盘</button>
+      </div>
+      <iframe id="pixel-stage-frame" title="龙门石窟像素世界" allow="fullscreen"></iframe>
     </div>
 
     <div id="voice-hint" class="hidden">🔊 点一下页面任意处，语音就来了</div>

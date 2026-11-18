@@ -1,0 +1,512 @@
+{
+  "sheets": [
+    {
+      "file": "backgrounds_bg_cliff_2112x576.png",
+      "category": "backgrounds",
+      "animation": "bg_cliff",
+      "tile_size": {
+        "width": 2112,
+        "height": 576
+      },
+      "columns": 1,
+      "rows": 1,
+      "frame_count": 1,
+      "frames": [
+        "bg_cliff"
+      ]
+    },
+    {
+      "file": "backgrounds_bg_far_hills_1280x576.png",
+      "category": "backgrounds",
+      "animation": "bg_far_hills",
+      "tile_size": {
+        "width": 1280,
+        "height": 576
+      },
+      "columns": 1,
+      "rows": 1,
+      "frame_count": 1,
+      "frames": [
+        "bg_far_hills"
+      ]
+    },
+    {
+      "file": "backgrounds_bg_foreground_3776x576.png",
+      "category": "backgrounds",
+      "animation": "bg_foreground",
+      "tile_size": {
+        "width": 3776,
+        "height": 576
+      },
+      "columns": 1,
+      "rows": 1,
+      "frame_count": 1,
+      "frames": [
+        "bg_foreground"
+      ]
+    },
+    {
+      "file": "backgrounds_bg_promenade_3200x576.png",
+      "category": "backgrounds",
+      "animation": "bg_promenade",
+      "tile_size": {
+        "width": 3200,
+        "height": 576
+      },
+      "columns": 1,
+      "rows": 1,
+      "frame_count": 1,
+      "frames": [
+        "bg_promenade"
+      ]
+    },
+    {
+      "file": "backgrounds_bg_river_2560x576.png",
+      "category": "backgrounds",
+      "animation": "bg_river",
+      "tile_size": {
+        "width": 2560,
+        "height": 576
+      },
+      "columns": 1,
+      "rows": 1,
+      "frame_count": 1,
+      "frames": [
+        "bg_river"
+      ]
+    },
+    {
+      "file": "backgrounds_bg_sky_960x576.png",
+      "category": "backgrounds",
+      "animation": "bg_sky",
+      "tile_size": {
+        "width": 960,
+        "height": 576
+      },
+      "columns": 1,
+      "rows": 1,
+      "frame_count": 1,
+      "frames": [
+        "bg_sky"
+      ]
+    },
+    {
+      "file": "characters_player_idle_64x64.png",
+      "category": "characters",
+      "animation": "player_idle",
+      "tile_size": {
+        "width": 64,
+        "height": 64
+      },
+      "columns": 4,
+      "rows": 1,
+      "frame_count": 4,
+      "frames": [
+        "player_idle_0",
+        "player_idle_1",
+        "player_idle_2",
+        "player_idle_3"
+      ]
+    },
+    {
+      "file": "characters_player_interact_64x64.png",
+      "category": "characters",
+      "animation": "player_interact",
+      "tile_size": {
+        "width": 64,
+        "height": 64
+      },
+      "columns": 4,
+      "rows": 1,
+      "frame_count": 4,
+      "frames": [
+        "player_interact_0",
+        "player_interact_1",
+        "player_interact_2",
+        "player_interact_3"
+      ]
+    },
+    {
+      "file": "characters_player_walk_64x64.png",
+      "category": "characters",
+      "animation": "player_walk",
+      "tile_size": {
+        "width": 64,
+        "height": 64
+      },
+      "columns": 6,
+      "rows": 1,
+      "frame_count": 6,
+      "frames": [
+        "player_walk_0",
+        "player_walk_1",
+        "player_walk_2",
+        "player_walk_3",
+        "player_walk_4",
+        "player_walk_5"
+      ]
+    },
+    {
+      "file": "effects_fx_bird_16x8.png",
+      "category": "effects",
+      "animation": "fx_bird",
+      "tile_size": {
+        "width": 16,
+        "height": 8
+      },
+      "columns": 1,
+      "rows": 1,
+      "frame_count": 1,
+      "frames": [
+        "fx_bird"
+      ]
+    },
+    {
+      "file": "effects_fx_glow_64x64.png",
+      "category": "effects",
+      "animation": "fx_glow",
+      "tile_size": {
+        "width": 64,
+        "height": 64
+      },
+      "columns": 1,
+      "rows": 1,
+      "frame_count": 1,
+      "frames": [
+        "fx_glow"
+      ]
+    },
+    {
+      "file": "effects_fx_petal_8x8.png",
+      "category": "effects",
+      "animation": "fx_petal",
+      "tile_size": {
+        "width": 8,
+        "height": 8
+      },
+      "columns": 1,
+      "rows": 1,
+      "frame_count": 1,
+      "frames": [
+        "fx_petal"
+      ]
+    },
+    {
+      "file": "effects_fx_ripple_32x16.png",
+      "category": "effects",
+      "animation": "fx_ripple",
+      "tile_size": {
+        "width": 32,
+        "height": 16
+      },
+      "columns": 1,
+      "rows": 1,
+      "frame_count": 1,
+      "frames": [
+        "fx_ripple"
+      ]
+    },
+    {
+      "file": "items_prop_bench_64x64.png",
+      "category": "items",
+      "animation": "prop_bench",
+      "tile_size": {
+        "width": 64,
+        "height": 64
+      },
+      "columns": 1,
+      "rows": 1,
+      "frame_count": 1,
+      "frames": [
+        "prop_bench"
+      ]
+    },
+    {
+      "file": "items_prop_railing_64x64.png",
+      "category": "items",
+      "animation": "prop_railing",
+      "tile_size": {
+        "width": 64,
+        "height": 64
+      },
+      "columns": 1,
+      "rows": 1,
+      "frame_count": 1,
+      "frames": [
+        "prop_railing"
+      ]
+    },
+    {
+      "file": "items_prop_sign_64x64.png",
+      "category": "items",
+      "animation": "prop_sign",
+      "tile_size": {
+        "width": 64,
+        "height": 64
+      },
+      "columns": 1,
+      "rows": 1,
+      "frame_count": 1,
+      "frames": [
+        "prop_sign"
+      ]
+    },
+    {
+      "file": "items_prop_bridge_512x192.png",
+      "category": "items",
+      "animation": "prop_bridge",
+      "tile_size": {
+        "width": 512,
+        "height": 192
+      },
+      "columns": 1,
+      "rows": 1,
+      "frame_count": 1,
+      "frames": [
+        "prop_bridge"
+      ]
+    },
+    {
+      "file": "items_prop_gate_192x256.png",
+      "category": "items",
+      "animation": "prop_gate",
+      "tile_size": {
+        "width": 192,
+        "height": 256
+      },
+      "columns": 1,
+      "rows": 1,
+      "frame_count": 1,
+      "frames": [
+        "prop_gate"
+      ]
+    },
+    {
+      "file": "items_prop_lamp_64x128.png",
+      "category": "items",
+      "animation": "prop_lamp",
+      "tile_size": {
+        "width": 64,
+        "height": 128
+      },
+      "columns": 1,
+      "rows": 1,
+      "frame_count": 1,
+      "frames": [
+        "prop_lamp"
+      ]
+    },
+    {
+      "file": "items_prop_moon_gate_128x192.png",
+      "category": "items",
+      "animation": "prop_moon_gate",
+      "tile_size": {
+        "width": 128,
+        "height": 192
+      },
+      "columns": 1,
+      "rows": 1,
+      "frame_count": 1,
+      "frames": [
+        "prop_moon_gate"
+      ]
+    },
+    {
+      "file": "items_prop_pine_128x192.png",
+      "category": "items",
+      "animation": "prop_pine",
+      "tile_size": {
+        "width": 128,
+        "height": 192
+      },
+      "columns": 1,
+      "rows": 1,
+      "frame_count": 1,
+      "frames": [
+        "prop_pine_01"
+      ]
+    },
+    {
+      "file": "items_prop_willow_128x192.png",
+      "category": "items",
+      "animation": "prop_willow",
+      "tile_size": {
+        "width": 128,
+        "height": 192
+      },
+      "columns": 1,
+      "rows": 1,
+      "frame_count": 1,
+      "frames": [
+        "prop_willow_01"
+      ]
+    },
+    {
+      "file": "items_prop_stone_step_128x64.png",
+      "category": "items",
+      "animation": "prop_stone_step",
+      "tile_size": {
+        "width": 128,
+        "height": 64
+      },
+      "columns": 1,
+      "rows": 1,
+      "frame_count": 1,
+      "frames": [
+        "prop_stone_step"
+      ]
+    },
+    {
+      "file": "tiles_tile_grass_64x64.png",
+      "category": "tiles",
+      "animation": "tile_grass",
+      "tile_size": {
+        "width": 64,
+        "height": 64
+      },
+      "columns": 1,
+      "rows": 1,
+      "frame_count": 1,
+      "frames": [
+        "tile_grass"
+      ]
+    },
+    {
+      "file": "tiles_tile_path_stone_64x64.png",
+      "category": "tiles",
+      "animation": "tile_path_stone",
+      "tile_size": {
+        "width": 64,
+        "height": 64
+      },
+      "columns": 3,
+      "rows": 1,
+      "frame_count": 3,
+      "frames": [
+        "tile_path_stone",
+        "tile_path_stone_02",
+        "tile_path_stone_03"
+      ]
+    },
+    {
+      "file": "tiles_tile_stone_wall_64x64.png",
+      "category": "tiles",
+      "animation": "tile_stone_wall",
+      "tile_size": {
+        "width": 64,
+        "height": 64
+      },
+      "columns": 1,
+      "rows": 1,
+      "frame_count": 1,
+      "frames": [
+        "tile_stone_wall"
+      ]
+    },
+    {
+      "file": "ui_ui_icon_bridge_16x16.png",
+      "category": "ui",
+      "animation": "ui_icon_bridge",
+      "tile_size": {
+        "width": 16,
+        "height": 16
+      },
+      "columns": 1,
+      "rows": 1,
+      "frame_count": 1,
+      "frames": [
+        "ui_icon_bridge"
+      ]
+    },
+    {
+      "file": "ui_ui_icon_buddha_16x16.png",
+      "category": "ui",
+      "animation": "ui_icon_buddha",
+      "tile_size": {
+        "width": 16,
+        "height": 16
+      },
+      "columns": 1,
+      "rows": 1,
+      "frame_count": 1,
+      "frames": [
+        "ui_icon_buddha"
+      ]
+    },
+    {
+      "file": "ui_ui_icon_cave_16x16.png",
+      "category": "ui",
+      "animation": "ui_icon_cave",
+      "tile_size": {
+        "width": 16,
+        "height": 16
+      },
+      "columns": 1,
+      "rows": 1,
+      "frame_count": 1,
+      "frames": [
+        "ui_icon_cave"
+      ]
+    },
+    {
+      "file": "ui_ui_icon_garden_16x16.png",
+      "category": "ui",
+      "animation": "ui_icon_garden",
+      "tile_size": {
+        "width": 16,
+        "height": 16
+      },
+      "columns": 1,
+      "rows": 1,
+      "frame_count": 1,
+      "frames": [
+        "ui_icon_garden"
+      ]
+    },
+    {
+      "file": "ui_ui_icon_temple_16x16.png",
+      "category": "ui",
+      "animation": "ui_icon_temple",
+      "tile_size": {
+        "width": 16,
+        "height": 16
+      },
+      "columns": 1,
+      "rows": 1,
+      "frame_count": 1,
+      "frames": [
+        "ui_icon_temple"
+      ]
+    },
+    {
+      "file": "ui_ui_panel_9slice_48x48.png",
+      "category": "ui",
+      "animation": "ui_panel_9slice",
+      "tile_size": {
+        "width": 48,
+        "height": 48
+      },
+      "columns": 1,
+      "rows": 1,
+      "frame_count": 1,
+      "frames": [
+        "ui_panel_9slice"
+      ]
+    },
+    {
+      "file": "ui_ui_stamp_24x24.png",
+      "category": "ui",
+      "animation": "ui_stamp",
+      "tile_size": {
+        "width": 24,
+        "height": 24
+      },
+      "columns": 1,
+      "rows": 1,
+      "frame_count": 1,
+      "frames": [
+        "ui_stamp"
+      ]
+    }
+  ]
+}

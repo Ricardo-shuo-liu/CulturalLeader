@@ -1,0 +1,829 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
+<title>龙门石窟 · 伊水公园漫步</title>
+<link rel="icon" href="data:," />
+<style>
+  html, body { margin: 0; height: 100%; background: #05090c; overflow: hidden; }
+  body {
+    display: grid;
+    place-items: center;
+    font-family: "Noto Sans SC", "PingFang SC", "Microsoft YaHei", sans-serif;
+    -webkit-user-select: none;
+    user-select: none;
+    touch-action: none;
+  }
+  #game {
+    display: block;
+    image-rendering: pixelated;
+    image-rendering: crisp-edges;
+    box-shadow: 0 0 0 1px #1a262d, 0 30px 90px rgba(0, 0, 0, 0.8);
+    background: #08131c;
+  }
+  #boot {
+    position: fixed;
+    inset: 0;
+    display: grid;
+    place-items: center;
+    color: #d8c49a;
+    font-size: 15px;
+    letter-spacing: 4px;
+    pointer-events: none;
+    transition: opacity 0.5s ease;
+    text-shadow: 0 2px 10px rgba(0, 0, 0, 0.8);
+  }
+</style>
+</head>
+<body>
+<canvas id="game" width="960" height="540"></canvas>
+<div id="boot">正在铺开山河……</div>
+<script>
+(() => {
+  'use strict';
+
+  const W = 960;
+  const H = 540;
+  const WORLD_W = 3200;
+  const canvas = document.getElementById('game');
+  const ctx = canvas.getContext('2d');
+  ctx.imageSmoothingEnabled = false;
+  const boot = document.getElementById('boot');
+
+  let scale = 1;
+  function fit() {
+    const max = Math.min(window.innerWidth / W, window.innerHeight / H);
+    scale = Math.max(0.2, Math.min(3, max));
+    canvas.style.width = `${W * scale}px`;
+    canvas.style.height = `${H * scale}px`;
+  }
+  fit();
+  window.addEventListener('resize', fit);
+
+  const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+
+  // ---------------------------------------------------------------------------
+  // Assets (v1 base + LongmenDetail v2 upgrade, see projects/LongmenDetail_64x64_*)
+  // ---------------------------------------------------------------------------
+  const ASSET_FILES = {
+    bg_sky: 'backgrounds/bg_sky.png',
+    bg_far_hills: 'backgrounds/bg_far_hills.png',
+    bg_cliff: 'v2:backgrounds/bg_cliff_v2.png',
+    bg_river: 'backgrounds/bg_river.png',
+    bg_promenade: 'v2:backgrounds/bg_promenade_v2.png',
+    bg_foreground: 'backgrounds/bg_foreground.png',
+    bg_niche: 'v2:backgrounds/bg_fengxian_niche.png',
+    player_idle: 'characters/player_idle_sheet.png',
+    player_walk: 'characters/player_walk_sheet.png',
+    player_interact: 'characters/player_interact_sheet.png',
+    prop_pine: 'items/prop_pine_01.png',
+    prop_willow: 'items/prop_willow_01.png',
+    prop_lamp: 'items/prop_lamp.png',
+    prop_bench: 'items/prop_bench.png',
+    prop_sign: 'items/prop_sign.png',
+    prop_bridge: 'items/prop_bridge.png',
+    prop_gate: 'items/prop_gate.png',
+    prop_moon_gate: 'items/prop_moon_gate.png',
+    ui_panel: 'v2:ui/ui_panel_9slice_v2.png',
+    ui_stamp: 'v2:ui/ui_stamp_v2.png',
+    ui_icon_bridge: 'v2:ui/ui_icon_spot_bridge.png',
+    ui_icon_buddha: 'v2:ui/ui_icon_spot_buddha.png',
+    ui_icon_cave: 'v2:ui/ui_icon_spot_cave.png',
+    ui_icon_temple: 'v2:ui/ui_icon_spot_temple.png',
+    ui_icon_garden: 'v2:ui/ui_icon_spot_garden.png',
+    ui_marker_0: 'v2:ui/ui_marker_spot_idle_0.png',
+    ui_marker_1: 'v2:ui/ui_marker_spot_idle_1.png',
+    ui_marker_done: 'v2:ui/ui_marker_spot_done.png',
+    ui_icon_close: 'v2:ui/ui_icon_close.png',
+    ui_icon_check: 'v2:ui/ui_icon_check.png',
+    ui_icon_arrow: 'v2:ui/ui_icon_arrow.png',
+    ui_icon_compass: 'v2:ui/ui_icon_compass.png',
+    ui_banner: 'v2:ui/ui_card_banner.png',
+    fx_glow: 'effects/fx_glow.png',
+    fx_petal: 'effects/fx_petal.png',
+    fx_ripple: 'effects/fx_ripple.png',
+    fx_bird: 'effects/fx_bird.png',
+  };
+  const A = {};
+
+  function loadAssets() {
+    return Promise.all(
+      Object.entries(ASSET_FILES).map(
+        ([key, path]) =>
+          new Promise((resolve) => {
+            const image = new Image();
+            image.onload = () => {
+              A[key] = image;
+              resolve();
+            };
+            image.onerror = () => {
+              console.warn('missing asset', path);
+              resolve();
+            };
+            image.src = path.startsWith('v2:')
+              ? `./assets-v2/${path.slice(3)}`
+              : `./assets/${path}`;
+          }),
+      ),
+    );
+  }
+
+  // ---------------------------------------------------------------------------
+  // Scene data
+  // ---------------------------------------------------------------------------
+  const SPOTS = [
+    {
+      x: 300, y: 480, key: 'bridge', sub: '伊水 · 石拱桥',
+      name: '龙门桥',
+      desc: '石拱桥横跨伊水，连接西山与香山。凭栏远望，两岸石窟与伊河烟波尽收眼底。',
+    },
+    {
+      x: 900, y: 480, key: 'buddha', sub: '西山 · 奉先寺',
+      name: '奉先寺 · 卢舍那大佛',
+      desc: '大佛通高约 17 米，开凿于唐高宗年间。面容丰腴慈祥，俯瞰伊水，是龙门石窟的象征。',
+    },
+    {
+      x: 1400, y: 480, key: 'cave', sub: '西山 · 万佛洞',
+      name: '万佛洞',
+      desc: '洞内南北两壁满刻小佛一万五千尊，正壁阿弥陀佛端坐中央，唐代造像艺术的精品。',
+    },
+    {
+      x: 2000, y: 480, key: 'temple', sub: '东山 · 香山寺',
+      name: '香山寺',
+      desc: '始建于北魏，依香山而建。武则天曾游幸于此，与西山石窟隔河相望，钟声可闻。',
+    },
+    {
+      x: 2400, y: 480, key: 'garden', sub: '东山 · 白园',
+      name: '白园',
+      desc: '白居易长眠之地。园内竹林清幽、九曲回廊，是伊水东岸最安静的园林。',
+    },
+  ];
+
+  const TREES = [
+    { key: 'prop_pine', x: 130, baseY: 540 },
+    { key: 'prop_willow', x: 620, baseY: 540 },
+    { key: 'prop_pine', x: 1120, baseY: 540 },
+    { key: 'prop_willow', x: 1580, baseY: 540 },
+    { key: 'prop_pine', x: 1820, baseY: 540 },
+    { key: 'prop_willow', x: 2260, baseY: 540 },
+    { key: 'prop_pine', x: 2620, baseY: 540 },
+    { key: 'prop_willow', x: 2960, baseY: 540 },
+  ];
+  const BENCHES = [
+    { key: 'prop_bench', x: 430, baseY: 536 },
+    { key: 'prop_bench', x: 1060, baseY: 536 },
+    { key: 'prop_bench', x: 1700, baseY: 536 },
+    { key: 'prop_bench', x: 2580, baseY: 536 },
+  ];
+  const SIGNS = [
+    { key: 'prop_sign', x: 700, baseY: 532 },
+    { key: 'prop_sign', x: 1250, baseY: 532 },
+    { key: 'prop_sign', x: 1880, baseY: 532 },
+    { key: 'prop_sign', x: 2780, baseY: 532 },
+  ];
+  const GATES = [
+    { key: 'prop_gate', x: 2000, baseY: 540 },
+    { key: 'prop_moon_gate', x: 2400, baseY: 540 },
+  ];
+  const LAMP_XS = [250, 560, 1010, 1180, 1460, 1760, 2100, 2340, 2680, 3020];
+
+  const DECOR = [...TREES, ...BENCHES, ...SIGNS, ...GATES];
+
+  // ---------------------------------------------------------------------------
+  // Game state
+  // ---------------------------------------------------------------------------
+  const startX = 760;
+  const state = {
+    player: { x: startX, y: 480, dir: 1, moving: false },
+    camX: clamp(startX - W / 2, 0, WORLD_W - W),
+    time: 0,
+    visited: new Set(),
+    nearSpot: null,
+    card: null,
+    cardAt: 0,
+    scene: 'world',
+    drawer: false,
+    help: false,
+    interactUntil: 0,
+    stamp: null,
+    stampAt: 0,
+    toast: null,
+    toastAt: 0,
+    petals: [],
+    birds: [],
+  };
+
+  for (let i = 0; i < 22; i += 1) {
+    state.petals.push({
+      x: Math.random() * WORLD_W,
+      y: 160 + Math.random() * 380,
+      speed: 14 + Math.random() * 22,
+      drift: 8 + Math.random() * 16,
+      phase: Math.random() * Math.PI * 2,
+    });
+  }
+  for (let i = 0; i < 3; i += 1) {
+    state.birds.push({
+      x: Math.random() * W,
+      y: 70 + i * 26,
+      speed: 9 + i * 3,
+      flap: Math.random() * Math.PI * 2,
+    });
+  }
+
+  // 调试接口（自动化检查 / 后续迭代）
+  window.__lm = { state, spots: SPOTS };
+
+  // ---------------------------------------------------------------------------
+  // Input
+  // ---------------------------------------------------------------------------
+  const keys = new Set();
+  const BLOCK = new Set(['arrowup', 'arrowdown', 'arrowleft', 'arrowright', ' ']);
+  window.addEventListener('keydown', (event) => {
+    const key = event.key.toLowerCase();
+    if (BLOCK.has(key)) event.preventDefault();
+    if (key === 'e') {
+      if (state.card) {
+        closeCard();
+      } else if (state.nearSpot) {
+        openSpot(state.nearSpot);
+      }
+      return;
+    }
+    if (key === 'q') {
+      state.drawer = !state.drawer;
+      state.help = false;
+      return;
+    }
+    if (key === 'h' || key === '?') {
+      state.help = !state.help;
+      state.drawer = false;
+      return;
+    }
+    if (key === 'escape') {
+      closeCard();
+      state.help = false;
+      state.drawer = false;
+      return;
+    }
+    keys.add(key);
+  });
+  window.addEventListener('keyup', (event) => keys.delete(event.key.toLowerCase()));
+  window.addEventListener('blur', () => keys.clear());
+
+  let touch = null;
+  canvas.addEventListener('pointerdown', (event) => {
+    canvas.setPointerCapture?.(event.pointerId);
+    const rect = canvas.getBoundingClientRect();
+    const px = (event.clientX - rect.left) / scale;
+    const py = (event.clientY - rect.top) / scale;
+
+    if (state.help) {
+      state.help = false;
+      return;
+    }
+    if (state.card) {
+      closeCard();
+      return;
+    }
+    if (state.drawer) {
+      if (px < W - 338 || py > 70 + 356) state.drawer = false;
+      return;
+    }
+    if (px > W - 240 && py < 50) {
+      state.drawer = true;
+      return;
+    }
+    if (px > W - 116 && py > H - 62) {
+      state.help = true;
+      return;
+    }
+    if (state.nearSpot) {
+      openSpot(state.nearSpot);
+      return;
+    }
+    touch = {
+      id: event.pointerId,
+      x: px,
+      y: py,
+      dx: 0,
+      dy: 0,
+    };
+  });
+  canvas.addEventListener('pointermove', (event) => {
+    if (!touch || touch.id !== event.pointerId) return;
+    const rect = canvas.getBoundingClientRect();
+    const dx = (event.clientX - rect.left) / scale - touch.x;
+    const dy = (event.clientY - rect.top) / scale - touch.y;
+    const len = Math.hypot(dx, dy);
+    if (len > 12) {
+      touch.dx = dx / len;
+      touch.dy = dy / len;
+    } else {
+      touch.dx = 0;
+      touch.dy = 0;
+    }
+  });
+  const endTouch = (event) => {
+    if (touch && touch.id === event.pointerId) touch = null;
+  };
+  canvas.addEventListener('pointerup', endTouch);
+  canvas.addEventListener('pointercancel', endTouch);
+
+  function openSpot(spot) {
+    state.card = spot;
+    state.cardAt = state.time;
+    state.interactUntil = state.time + 0.6;
+    state.scene = spot.key === 'buddha' ? 'niche' : 'world';
+    state.drawer = false;
+    state.help = false;
+    if (!state.visited.has(spot.name)) {
+      state.visited.add(spot.name);
+      state.stamp = spot;
+      state.stampAt = state.time;
+    }
+  }
+
+  function closeCard() {
+    state.card = null;
+    state.scene = 'world';
+  }
+
+  // ---------------------------------------------------------------------------
+  // Update
+  // ---------------------------------------------------------------------------
+  function update(dt) {
+    state.time += dt;
+
+    let dx = 0;
+    let dy = 0;
+    if (keys.has('a') || keys.has('arrowleft')) dx -= 1;
+    if (keys.has('d') || keys.has('arrowright')) dx += 1;
+    if (keys.has('w') || keys.has('arrowup')) dy -= 1;
+    if (keys.has('s') || keys.has('arrowdown')) dy += 1;
+    if (touch) {
+      dx += touch.dx * 1.15;
+      dy += touch.dy * 1.15;
+    }
+
+    const len = Math.hypot(dx, dy);
+    state.player.moving = false;
+    if (len > 0.01 && !state.card && !state.drawer && !state.help) {
+      dx /= len;
+      dy /= len;
+      const sprint = keys.has('shift');
+      const speed = sprint ? 190 : 108;
+      state.player.x = clamp(state.player.x + dx * speed * dt, 40, WORLD_W - 40);
+      state.player.y = clamp(state.player.y + dy * speed * 0.5 * dt, 462, 514);
+      if (Math.abs(dx) > 0.2) state.player.dir = dx < 0 ? -1 : 1;
+      state.player.moving = true;
+    }
+
+    const targetCam = clamp(state.player.x - W / 2, 0, WORLD_W - W);
+    state.camX += (targetCam - state.camX) * Math.min(1, dt * 4.5);
+
+    state.nearSpot =
+      SPOTS.find((spot) => Math.hypot(spot.x - state.player.x, spot.y - state.player.y) < 72) || null;
+
+    for (const petal of state.petals) {
+      petal.y += petal.speed * dt;
+      petal.x += Math.sin(state.time * 1.4 + petal.phase) * petal.drift * dt;
+      if (petal.y > 540) {
+        petal.y = 160;
+        petal.x = Math.random() * WORLD_W;
+      }
+    }
+    for (const bird of state.birds) {
+      bird.x -= bird.speed * dt;
+      bird.flap += dt * 8;
+      if (bird.x < -30) {
+        bird.x = W + 40;
+        bird.y = 60 + Math.random() * 90;
+      }
+    }
+  }
+
+  // ---------------------------------------------------------------------------
+  // Drawing helpers
+  // ---------------------------------------------------------------------------
+  function panel(x, y, w, h, alpha = 1) {
+    const img = A.ui_panel;
+    if (!img) {
+      ctx.fillStyle = 'rgba(10,16,20,0.92)';
+      ctx.fillRect(x, y, w, h);
+      return;
+    }
+    const s = 16;
+    const iw = img.width;
+    const ih = img.height;
+    x = Math.round(x);
+    y = Math.round(y);
+    w = Math.round(w);
+    h = Math.round(h);
+    ctx.globalAlpha = alpha;
+    ctx.drawImage(img, 0, 0, s, s, x, y, s, s);
+    ctx.drawImage(img, iw - s, 0, s, s, x + w - s, y, s, s);
+    ctx.drawImage(img, 0, ih - s, s, s, x, y + h - s, s, s);
+    ctx.drawImage(img, iw - s, ih - s, s, s, x + w - s, y + h - s, s, s);
+    ctx.drawImage(img, s, 0, iw - 2 * s, s, x + s, y, w - 2 * s, s);
+    ctx.drawImage(img, s, ih - s, iw - 2 * s, s, x + s, y + h - s, w - 2 * s, s);
+    ctx.drawImage(img, 0, s, s, ih - 2 * s, x, y + s, s, h - 2 * s);
+    ctx.drawImage(img, iw - s, s, s, ih - 2 * s, x + w - s, y + s, s, h - 2 * s);
+    ctx.drawImage(img, s, s, iw - 2 * s, ih - 2 * s, x + s, y + s, w - 2 * s, h - 2 * s);
+    ctx.globalAlpha = 1;
+  }
+
+  function setFont(size, weight = 'normal') {
+    ctx.font = `${weight} ${size}px "Noto Sans SC", "Microsoft YaHei", sans-serif`;
+    ctx.textBaseline = 'middle';
+  }
+
+  function text(txt, x, y, color = '#f2e5c8', align = 'left', size = 13, weight = 'normal') {
+    setFont(size, weight);
+    ctx.fillStyle = color;
+    ctx.textAlign = align;
+    ctx.fillText(txt, x, y);
+  }
+
+  function wrap(textValue, maxWidth, size) {
+    setFont(size);
+    const lines = [];
+    let line = '';
+    for (const ch of textValue) {
+      const test = line + ch;
+      if (ctx.measureText(test).width > maxWidth && line) {
+        lines.push(line);
+        line = ch;
+      } else {
+        line = test;
+      }
+    }
+    if (line) lines.push(line);
+    return lines;
+  }
+
+  // ---------------------------------------------------------------------------
+  // Render
+  // ---------------------------------------------------------------------------
+  function drawSky() {
+    if (A.bg_sky) ctx.drawImage(A.bg_sky, 0, 0);
+    for (const bird of state.birds) {
+      const wingUp = Math.sin(bird.flap) > 0;
+      ctx.save();
+      ctx.translate(Math.round(bird.x), Math.round(bird.y));
+      if (!wingUp) ctx.scale(1, -1);
+      if (A.fx_bird) ctx.drawImage(A.fx_bird, 0, 0);
+      ctx.restore();
+    }
+  }
+
+  function drawParallax() {
+    const camX = state.camX;
+    if (A.bg_far_hills) ctx.drawImage(A.bg_far_hills, -Math.round(camX * 0.12), 0);
+    if (A.bg_cliff) ctx.drawImage(A.bg_cliff, -Math.round(camX * 0.5), 0);
+    if (A.bg_river) ctx.drawImage(A.bg_river, -Math.round(camX * 0.7), 0);
+    if (A.prop_bridge) {
+      const bx = 300 * 0.7 + (W / 2) * (1 - 0.7) - camX * 0.7 - A.prop_bridge.width / 2;
+      ctx.drawImage(A.prop_bridge, Math.round(bx), 250);
+    }
+    drawRiverGlints();
+    if (A.bg_promenade) ctx.drawImage(A.bg_promenade, -Math.round(camX), 0);
+  }
+
+  function drawRiverGlints() {
+    const camX = state.camX;
+    for (let i = 0; i < 90; i += 1) {
+      const base = (i * 43.7) % (WORLD_W + W);
+      let x = base - camX * 0.7;
+      if (x < -30) x += WORLD_W + W;
+      if (x < -30 || x > W + 30) continue;
+      const y = 306 + ((i * 29) % 128);
+      const flicker = 0.5 + 0.5 * Math.sin(state.time * 2.2 + i * 1.9);
+      if (flicker < 0.25) continue;
+      ctx.fillStyle = i % 7 === 0
+        ? `rgba(255, 217, 160, ${0.16 + flicker * 0.2})`
+        : `rgba(139, 180, 176, ${0.1 + flicker * 0.16})`;
+      ctx.fillRect(Math.round(x), y, 4 + (i % 5) * 2, 1);
+    }
+  }
+
+  function drawDecorAndPlayer() {
+    const camX = state.camX;
+    const items = [];
+    for (const lamp of LAMP_XS) items.push({ kind: 'lamp', x: lamp, baseY: 535 });
+    for (const decor of DECOR) items.push({ kind: 'decor', ...decor });
+    items.push({ kind: 'player', x: state.player.x, baseY: state.player.y });
+    items.sort((a, b) => a.baseY - b.baseY);
+
+    for (const item of items) {
+      if (item.kind === 'player') {
+        drawPlayer();
+        continue;
+      }
+      const sx = Math.round(item.x - camX);
+      if (sx < -220 || sx > W + 220) continue;
+      if (item.kind === 'lamp') {
+        if (!A.prop_lamp) continue;
+        ctx.drawImage(A.prop_lamp, sx - 32, item.baseY - A.prop_lamp.height);
+        if (A.fx_glow) {
+          const flicker = 0.34 + 0.1 * Math.sin(state.time * 4 + item.x);
+          ctx.globalAlpha = flicker;
+          ctx.drawImage(A.fx_glow, sx - 48, item.baseY - 100, 96, 96);
+          ctx.globalAlpha = 1;
+        }
+      } else {
+        const img = A[item.key];
+        if (!img) continue;
+        ctx.drawImage(img, sx - img.width / 2, item.baseY - img.height);
+      }
+    }
+  }
+
+  function drawPlayer() {
+    const sx = Math.round(state.player.x - state.camX);
+    const sy = Math.round(state.player.y);
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.28)';
+    ctx.beginPath();
+    ctx.ellipse(sx, sy - 3, 17, 4, 0, 0, Math.PI * 2);
+    ctx.fill();
+
+    let sheet = A.player_idle;
+    let frames = 4;
+    let frame = Math.floor(state.time * 8) % 4;
+    const interacting = state.time < state.interactUntil;
+    if (interacting) {
+      sheet = A.player_interact;
+      frames = 4;
+      frame = Math.min(frames - 1, Math.floor((state.interactUntil - state.time) * 6) % frames);
+    } else if (state.player.moving) {
+      sheet = A.player_walk;
+      frames = 6;
+      frame = Math.floor(state.time * 12) % frames;
+    }
+    if (!sheet) return;
+    if (state.player.dir < 0) {
+      ctx.save();
+      ctx.translate(sx + 32, sy - 64);
+      ctx.scale(-1, 1);
+      ctx.drawImage(sheet, frame * 64, 0, 64, 64, 0, 0, 64, 64);
+      ctx.restore();
+    } else {
+      ctx.drawImage(sheet, frame * 64, 0, 64, 64, sx - 32, sy - 64, 64, 64);
+    }
+  }
+
+  function drawSpotMarkers() {
+    const camX = state.camX;
+    const frame = Math.floor(state.time * 2) % 2;
+    for (const spot of SPOTS) {
+      const sx = Math.round(spot.x - camX);
+      if (sx < -80 || sx > W + 80) continue;
+      const found = state.visited.has(spot.name);
+      const baseY = 506;
+      if (!found) {
+        if (A.fx_glow) {
+          const pulse = 0.5 + 0.5 * Math.sin(state.time * 3 + spot.x * 0.01);
+          ctx.globalAlpha = 0.18 + pulse * 0.14;
+          ctx.drawImage(A.fx_glow, sx - 26, baseY - 92, 52, 52);
+          ctx.globalAlpha = 1;
+        }
+        const img = frame ? A.ui_marker_1 : A.ui_marker_0;
+        if (img) ctx.drawImage(img, sx - 16, baseY - 56);
+      } else if (A.ui_marker_done) {
+        ctx.drawImage(A.ui_marker_done, sx - 16, baseY - 56);
+      }
+    }
+  }
+
+  function drawSpotPrompt() {
+    if (!state.nearSpot || state.card || state.drawer || state.help) return;
+    if (state.scene !== 'world') return;
+    const label = `E · 查看 ${state.nearSpot.name}`;
+    setFont(15, 'bold');
+    const tw = ctx.measureText(label).width + 44;
+    const bx = clamp(W / 2 - tw / 2, 12, W - tw - 12);
+    const by = H - 70;
+    panel(bx, by, tw, 40, 0.94);
+    if (A.ui_icon_arrow) ctx.drawImage(A.ui_icon_arrow, bx + 8, by + 8, 24, 24);
+    text(label, bx + 40, by + 20, '#f2e5c8', 'left', 15, 'bold');
+  }
+
+  function drawPetals() {
+    if (!A.fx_petal) return;
+    const camX = state.camX;
+    for (const petal of state.petals) {
+      const sx = Math.round(petal.x - camX);
+      if (sx < -20 || sx > W + 20) continue;
+      ctx.globalAlpha = 0.75;
+      ctx.drawImage(A.fx_petal, sx, Math.round(petal.y));
+      ctx.globalAlpha = 1;
+    }
+  }
+
+  function drawAtmosphere() {
+    const warm = ctx.createLinearGradient(0, 0, W, H);
+    warm.addColorStop(0, 'rgba(255, 170, 96, 0.1)');
+    warm.addColorStop(0.5, 'rgba(255, 150, 80, 0.04)');
+    warm.addColorStop(1, 'rgba(24, 38, 70, 0.12)');
+    ctx.fillStyle = warm;
+    ctx.fillRect(0, 0, W, H);
+
+    const vignette = ctx.createRadialGradient(W / 2, H / 2, H * 0.42, W / 2, H / 2, H * 0.95);
+    vignette.addColorStop(0, 'rgba(0, 0, 0, 0)');
+    vignette.addColorStop(1, 'rgba(0, 0, 0, 0.34)');
+    ctx.fillStyle = vignette;
+    ctx.fillRect(0, 0, W, H);
+  }
+
+  // ---------------------------------------------------------------------------
+  // HUD
+  // ---------------------------------------------------------------------------
+  function drawHud() {
+    // top bar
+    ctx.fillStyle = 'rgba(8, 16, 20, 0.86)';
+    ctx.fillRect(0, 0, W, 46);
+    ctx.fillStyle = 'rgba(189, 160, 119, 0.65)';
+    ctx.fillRect(0, 45, W, 1);
+    ctx.fillStyle = '#e8c46a';
+    ctx.fillRect(16, 15, 8, 8);
+    ctx.fillStyle = '#3f6a8a';
+    ctx.fillRect(18, 17, 4, 4);
+    text('龙门石窟 · 伊水公园', 34, 22, '#f2e5c8', 'left', 21, 'bold');
+    text('LONGMEN GROTTOES · PARK WALK', 254, 24, '#857c6a', 'left', 11);
+
+    // top-right progress: five spot icons, lit when visited
+    const iconX0 = W - 24 - SPOTS.length * 38;
+    if (A.ui_stamp && state.visited.size > 0) {
+      ctx.globalAlpha = 0.9;
+      ctx.drawImage(A.ui_stamp, iconX0 - 44, 7, 32, 32);
+      ctx.globalAlpha = 1;
+    }
+    SPOTS.forEach((spot, i) => {
+      const x = iconX0 + i * 38;
+      const found = state.visited.has(spot.name);
+      const img = A[`ui_icon_${spot.key}`];
+      ctx.globalAlpha = found ? 1 : 0.30;
+      if (img) ctx.drawImage(img, x, 7, 32, 32);
+      ctx.globalAlpha = 1;
+      if (found) {
+        ctx.fillStyle = '#e8c46a';
+        ctx.fillRect(x + 8, 41, 16, 1);
+      }
+    });
+
+    // bottom-right help button
+    panel(W - 108, H - 52, 92, 36, 0.82);
+    if (A.ui_icon_compass) ctx.drawImage(A.ui_icon_compass, W - 102, H - 46, 24, 24);
+    text('H 帮助', W - 72, H - 34, '#c9b893', 'left', 12);
+
+    if (state.toast && state.time < state.toastAt + 2) {
+      const alpha = clamp(state.toastAt + 2 - state.time, 0, 1);
+      panel(W / 2 - 120, 66, 240, 40, 0.9 * alpha);
+      text(state.toast, W / 2, 86, '#f2e5c8', 'center', 15, 'bold');
+    }
+
+    drawSpotPrompt();
+    drawDrawer();
+    drawHelp();
+    drawCard();
+  }
+
+  function drawCard() {
+    if (!state.card) return;
+    const spot = state.card;
+    const w = 720;
+    const h = 360;
+    const x = (W - w) / 2;
+    const y = state.scene === 'niche' ? H - h - 14 : (H - h) / 2 - 4;
+    panel(x, y, w, h, 0.97);
+
+    // ink-wash banner at the top of the card
+    if (A.ui_banner) ctx.drawImage(A.ui_banner, 0, 36, 640, 120, x + 40, y + 18, 640, 120);
+    ctx.fillStyle = 'rgba(189, 160, 119, 0.55)';
+    ctx.fillRect(x + 40, y + 138, 640, 1);
+
+    const icon = A[`ui_icon_${spot.key}`];
+    if (icon) ctx.drawImage(icon, x + 30, y + 156, 64, 64);
+    text(spot.name, x + 110, y + 184, '#f2e5c8', 'left', 25, 'bold');
+    if (spot.sub) text(spot.sub, x + 110, y + 210, '#857c6a', 'left', 13);
+
+    if (state.visited.has(spot.name)) {
+      if (A.ui_stamp) ctx.drawImage(A.ui_stamp, x + w - 70, y + 158, 32, 32);
+      text('已打卡', x + w - 86, y + 198, '#b5503f', 'right', 12, 'bold');
+    }
+
+    ctx.fillStyle = 'rgba(189, 160, 119, 0.4)';
+    ctx.fillRect(x + 30, y + 232, w - 60, 1);
+    const lines = wrap(spot.desc, w - 120, 16);
+    lines.forEach((line, index) => {
+      text(line, x + 30, y + 258 + index * 28, '#c9b893', 'left', 16);
+    });
+    text('E / 点击 收起', x + w - 30, y + h - 22, '#857c6a', 'right', 12.5);
+  }
+
+  function drawDrawer() {
+    if (!state.drawer) return;
+    const w = 320;
+    const h = 350;
+    const x = W - w - 18;
+    const y = 70;
+    panel(x, y, w, h, 0.95);
+    if (A.ui_icon_compass) ctx.drawImage(A.ui_icon_compass, x + 18, y + 14, 24, 24);
+    text('游历', x + 52, y + 27, '#e8c46a', 'left', 18, 'bold');
+    text(`${state.visited.size} / ${SPOTS.length}`, x + w - 24, y + 27, '#d8c49a', 'right', 13);
+    ctx.fillStyle = 'rgba(189, 160, 119, 0.35)';
+    ctx.fillRect(x + 18, y + 48, w - 36, 1);
+    SPOTS.forEach((spot, i) => {
+      const iy = y + 70 + i * 52;
+      const found = state.visited.has(spot.name);
+      const img = A[`ui_icon_${spot.key}`];
+      ctx.globalAlpha = found ? 1 : 0.35;
+      if (img) ctx.drawImage(img, x + 20, iy - 14, 32, 32);
+      ctx.globalAlpha = 1;
+      text(spot.name, x + 64, iy, found ? '#f2e5c8' : '#857c6a', 'left', 14);
+      if (found && A.ui_icon_check) ctx.drawImage(A.ui_icon_check, x + w - 44, iy - 12, 24, 24);
+    });
+    text('Q 收起', x + w - 24, y + h - 18, '#857c6a', 'right', 11.5);
+  }
+
+  function drawHelp() {
+    if (!state.help) return;
+    const w = 470;
+    const h = 268;
+    const x = (W - w) / 2;
+    const y = (H - h) / 2;
+    panel(x, y, w, h, 0.97);
+    text('操作说明', x + 26, y + 32, '#e8c46a', 'left', 18, 'bold');
+    if (A.ui_icon_close) ctx.drawImage(A.ui_icon_close, x + w - 42, y + 20, 24, 24);
+    ctx.fillStyle = 'rgba(189, 160, 119, 0.35)';
+    ctx.fillRect(x + 26, y + 60, w - 52, 1);
+    const rows = [
+      ['A / D 或 ← →', '沿伊水东岸行走'],
+      ['W / S', '在步道上调整前后位置'],
+      ['Shift', '疾走'],
+      ['E', '查看 / 收起景点'],
+      ['Q', '展开游历抽屉'],
+      ['H / ?', '打开 / 收起帮助'],
+    ];
+    rows.forEach((row, i) => {
+      const ry = y + 84 + i * 27;
+      text(row[0], x + 26, ry, '#f2e5c8', 'left', 14, 'bold');
+      text(row[1], x + 190, ry, '#c9b893', 'left', 14);
+    });
+    text('H / 点击 收起', x + w - 26, y + h - 20, '#857c6a', 'right', 12);
+  }
+
+  function drawNicheScene() {
+    if (A.bg_niche) {
+      const nx = Math.round((W - A.bg_niche.width) / 2);
+      ctx.drawImage(A.bg_niche, nx, 0);
+    }
+    const v = ctx.createRadialGradient(W / 2, H * 0.32, H * 0.28, W / 2, H * 0.32, H * 0.9);
+    v.addColorStop(0, 'rgba(0, 0, 0, 0)');
+    v.addColorStop(1, 'rgba(0, 0, 0, 0.42)');
+    ctx.fillStyle = v;
+    ctx.fillRect(0, 0, W, H);
+    panel(20, 20, 150, 40, 0.85);
+    text('E · 返回伊水', 34, 40, '#f2e5c8', 'left', 14, 'bold');
+    drawCard();
+  }
+
+  // ---------------------------------------------------------------------------
+  // Loop
+  // ---------------------------------------------------------------------------
+  let last = performance.now();
+  function loop(now) {
+    const dt = Math.min(0.05, (now - last) / 1000);
+    last = now;
+    update(dt);
+
+    ctx.fillStyle = '#08131c';
+    ctx.fillRect(0, 0, W, H);
+    if (state.scene === 'niche') {
+      drawNicheScene();
+    } else {
+      drawSky();
+      drawParallax();
+      drawSpotMarkers();
+      drawDecorAndPlayer();
+      drawPetals();
+      if (A.bg_foreground) ctx.drawImage(A.bg_foreground, -Math.round(state.camX * 1.25), 0);
+      drawAtmosphere();
+      drawHud();
+    }
+
+    requestAnimationFrame(loop);
+  }
+
+  loadAssets().then(() => {
+    boot.style.opacity = '0';
+    setTimeout(() => boot.remove(), 500);
+    state.toast = '从伊水东岸出发';
+    state.toastAt = state.time;
+    requestAnimationFrame(loop);
+  });
+})();
+</script>
+</body>
+</html>

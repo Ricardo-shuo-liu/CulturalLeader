@@ -1,0 +1,18 @@
+{
+  "name": "InkGongbi48",
+  "canvas": [
+    960,
+    540
+  ],
+  "base_size": 64,
+  "sub_style": "Dense Detail + 选择性描边",
+  "shading": "3-tone",
+  "dithering": "selective",
+  "light_direction": "top-left",
+  "rules": [
+    "alpha only 0 or 255",
+    "no anti-aliasing, gradients, or subpixels",
+    "2x2 to 3x3 intentional pixel clusters",
+    "light from top-left"
+  ]
+}

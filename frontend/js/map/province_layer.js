@@ -128,7 +128,10 @@ export function createProvinceLayer({ scene, camera, controls }) {
     updateLabels(camera, width, height) {
       if (!state.showLabels) {
         labels.forEach((element) => {
-          if (element.style.display !== 'none') element.style.display = 'none';
+          if (element.style.display !== 'none') {
+            element.style.display = 'none';
+            element.style.opacity = '0';
+          }
         });
         return;
       }
@@ -148,11 +151,16 @@ export function createProvinceLayer({ scene, camera, controls }) {
         const name = province.name.replace(/(省|市|自治区|特别行政区|壮族|回族|维吾尔)/g, '');
         if (element.textContent !== name) element.textContent = name;
         element.style.display = '';
+        // 标签 CSS 默认 opacity:0，这里必须显式点亮，否则省级视野看不到省名
+        if (element.style.opacity !== '1') element.style.opacity = '1';
         element.style.transform = `translate(${x}px, ${y}px)`;
         used += 1;
       });
       for (let i = used; i < labels.length; i += 1) {
-        if (labels[i].style.display !== 'none') labels[i].style.display = 'none';
+        if (labels[i].style.display !== 'none') {
+          labels[i].style.display = 'none';
+          labels[i].style.opacity = '0';
+        }
       }
       state.labelCount = used;
     },

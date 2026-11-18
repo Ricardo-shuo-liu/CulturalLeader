@@ -52,6 +52,44 @@ docker compose up -d --build             # http://127.0.0.1:8000/ ，后台 /adm
 - `.env` 里配 `OPENAI_API_KEY`（对话）、`TTS_*` / `ASR_*`（语音）、`TENCENT_MAP_*`（地图与通勤时长）；
   全都没配也能跑：城市讲解走本地知识库、城内地图走自建矢量底图、通勤时长标注「估算」。
 
+## 2D 像素 Demo
+
+项目内提供两个独立的 2D 像素场景，用于查看像素美术与交互效果（不依赖主舞台）：
+
+| Demo | 入口 | 内容 |
+| --- | --- | --- |
+| 龙门石窟 · 伊水公园漫步 | `frontend/demo/longmen_park.html` | 960×540 黄昏横版场景：西山崖壁、伊河东岸步道与奉先寺大佛龛；小人行走、5 处景点打卡、游历抽屉、印章与帮助层 |
+| 中国地图旅行 | `frontend/demo/pixel_travel.html` | 像素中国地图上自由行走、城市打卡与小地图 |
+
+启动服务后访问 <http://127.0.0.1:8000/demo/longmen_park.html>，或直接打开 HTML 文件。
+龙门 demo 的基础素材在 `frontend/demo/assets/`，奉先寺精修包在 `frontend/demo/assets-v2/`（同名资源优先使用 v2）。
+
+### 像素美术规范
+
+本项目的 2D 像素素材必须使用项目级技能 `.claude/skills/pixel-asset-master/`（约束见根目录 `CLAUDE.md`）。
+
+| 素材项目 | 内容 | 设计契约 / 导出 |
+| --- | --- | --- |
+| `projects/LongmenPark_64x64_20261117/` | 龙门 demo 基础包：角色、步道、道具、v1 背景与 UI | `spec_lock.md` / `exports/` |
+| `projects/LongmenDetail_64x64_20261118/` | 奉先寺精修包：大佛龛、v2 崖壁与堤岸、v2 UI 套件 | `spec_lock.md` / `exports/LongmenDetail_20261118.zip` |
+
+```bash
+# 生成 v1 基础素材
+python projects/LongmenPark_64x64_20261117/scripts/gen_lib.py
+python projects/LongmenPark_64x64_20261117/scripts/gen_props.py
+python projects/LongmenPark_64x64_20261117/scripts/gen_backgrounds.py
+
+# 生成 v2 精修素材（大佛龛 / 崖壁 / 堤岸 / UI）
+cd projects/LongmenDetail_64x64_20261118/scripts
+python3 hero.py && python3 cliff.py && python3 promenade.py && python3 ui.py
+cd ../../..
+
+# 量化 / 清理 / 索引化，并校验
+python .claude/skills/pixel-asset-master/scripts/finalize_assets.py projects/LongmenPark_64x64_20261117 --all
+python .claude/skills/pixel-asset-master/scripts/asset_validator.py projects/LongmenPark_64x64_20261117
+python .claude/skills/pixel-asset-master/scripts/asset_validator.py projects/LongmenDetail_64x64_20261118
+```
+
 ## 文档
 
 | 文档 | 内容 |

@@ -1,0 +1,260 @@
+{
+  "sheets": [
+    {
+      "file": "backgrounds_bg_cliff_v2_2112x576.png",
+      "category": "backgrounds",
+      "animation": "bg_cliff_v2",
+      "tile_size": {
+        "width": 2112,
+        "height": 576
+      },
+      "columns": 1,
+      "rows": 1,
+      "frame_count": 1,
+      "frames": [
+        "bg_cliff_v2"
+      ]
+    },
+    {
+      "file": "backgrounds_bg_fengxian_niche_768x576.png",
+      "category": "backgrounds",
+      "animation": "bg_fengxian_niche",
+      "tile_size": {
+        "width": 768,
+        "height": 576
+      },
+      "columns": 1,
+      "rows": 1,
+      "frame_count": 1,
+      "frames": [
+        "bg_fengxian_niche"
+      ]
+    },
+    {
+      "file": "backgrounds_bg_promenade_v2_3200x576.png",
+      "category": "backgrounds",
+      "animation": "bg_promenade_v2",
+      "tile_size": {
+        "width": 3200,
+        "height": 576
+      },
+      "columns": 1,
+      "rows": 1,
+      "frame_count": 1,
+      "frames": [
+        "bg_promenade_v2"
+      ]
+    },
+    {
+      "file": "ui_ui_card_banner_640x192.png",
+      "category": "ui",
+      "animation": "ui_card_banner",
+      "tile_size": {
+        "width": 640,
+        "height": 192
+      },
+      "columns": 1,
+      "rows": 1,
+      "frame_count": 1,
+      "frames": [
+        "ui_card_banner"
+      ]
+    },
+    {
+      "file": "ui_ui_icon_arrow_24x24.png",
+      "category": "ui",
+      "animation": "ui_icon_arrow",
+      "tile_size": {
+        "width": 24,
+        "height": 24
+      },
+      "columns": 1,
+      "rows": 1,
+      "frame_count": 1,
+      "frames": [
+        "ui_icon_arrow"
+      ]
+    },
+    {
+      "file": "ui_ui_icon_check_24x24.png",
+      "category": "ui",
+      "animation": "ui_icon_check",
+      "tile_size": {
+        "width": 24,
+        "height": 24
+      },
+      "columns": 1,
+      "rows": 1,
+      "frame_count": 1,
+      "frames": [
+        "ui_icon_check"
+      ]
+    },
+    {
+      "file": "ui_ui_icon_close_24x24.png",
+      "category": "ui",
+      "animation": "ui_icon_close",
+      "tile_size": {
+        "width": 24,
+        "height": 24
+      },
+      "columns": 1,
+      "rows": 1,
+      "frame_count": 1,
+      "frames": [
+        "ui_icon_close"
+      ]
+    },
+    {
+      "file": "ui_ui_icon_compass_24x24.png",
+      "category": "ui",
+      "animation": "ui_icon_compass",
+      "tile_size": {
+        "width": 24,
+        "height": 24
+      },
+      "columns": 1,
+      "rows": 1,
+      "frame_count": 1,
+      "frames": [
+        "ui_icon_compass"
+      ]
+    },
+    {
+      "file": "ui_ui_icon_spot_bridge_32x32.png",
+      "category": "ui",
+      "animation": "ui_icon_spot_bridge",
+      "tile_size": {
+        "width": 32,
+        "height": 32
+      },
+      "columns": 1,
+      "rows": 1,
+      "frame_count": 1,
+      "frames": [
+        "ui_icon_spot_bridge"
+      ]
+    },
+    {
+      "file": "ui_ui_icon_spot_buddha_32x32.png",
+      "category": "ui",
+      "animation": "ui_icon_spot_buddha",
+      "tile_size": {
+        "width": 32,
+        "height": 32
+      },
+      "columns": 1,
+      "rows": 1,
+      "frame_count": 1,
+      "frames": [
+        "ui_icon_spot_buddha"
+      ]
+    },
+    {
+      "file": "ui_ui_icon_spot_cave_32x32.png",
+      "category": "ui",
+      "animation": "ui_icon_spot_cave",
+      "tile_size": {
+        "width": 32,
+        "height": 32
+      },
+      "columns": 1,
+      "rows": 1,
+      "frame_count": 1,
+      "frames": [
+        "ui_icon_spot_cave"
+      ]
+    },
+    {
+      "file": "ui_ui_icon_spot_garden_32x32.png",
+      "category": "ui",
+      "animation": "ui_icon_spot_garden",
+      "tile_size": {
+        "width": 32,
+        "height": 32
+      },
+      "columns": 1,
+      "rows": 1,
+      "frame_count": 1,
+      "frames": [
+        "ui_icon_spot_garden"
+      ]
+    },
+    {
+      "file": "ui_ui_icon_spot_temple_32x32.png",
+      "category": "ui",
+      "animation": "ui_icon_spot_temple",
+      "tile_size": {
+        "width": 32,
+        "height": 32
+      },
+      "columns": 1,
+      "rows": 1,
+      "frame_count": 1,
+      "frames": [
+        "ui_icon_spot_temple"
+      ]
+    },
+    {
+      "file": "ui_ui_stamp_v2_32x32.png",
+      "category": "ui",
+      "animation": "ui_stamp_v2",
+      "tile_size": {
+        "width": 32,
+        "height": 32
+      },
+      "columns": 1,
+      "rows": 1,
+      "frame_count": 1,
+      "frames": [
+        "ui_stamp_v2"
+      ]
+    },
+    {
+      "file": "ui_ui_marker_spot_done_32x56.png",
+      "category": "ui",
+      "animation": "ui_marker_spot_done",
+      "tile_size": {
+        "width": 32,
+        "height": 56
+      },
+      "columns": 1,
+      "rows": 1,
+      "frame_count": 1,
+      "frames": [
+        "ui_marker_spot_done"
+      ]
+    },
+    {
+      "file": "ui_ui_marker_spot_idle_32x56.png",
+      "category": "ui",
+      "animation": "ui_marker_spot_idle",
+      "tile_size": {
+        "width": 32,
+        "height": 56
+      },
+      "columns": 2,
+      "rows": 1,
+      "frame_count": 2,
+      "frames": [
+        "ui_marker_spot_idle_0",
+        "ui_marker_spot_idle_1"
+      ]
+    },
+    {
+      "file": "ui_ui_panel_9slice_v2_64x64.png",
+      "category": "ui",
+      "animation": "ui_panel_9slice_v2",
+      "tile_size": {
+        "width": 64,
+        "height": 64
+      },
+      "columns": 1,
+      "rows": 1,
+      "frame_count": 1,
+      "frames": [
+        "ui_panel_9slice_v2"
+      ]
+    }
+  ]
+}

@@ -52,6 +52,10 @@ class Settings(BaseSettings):
     rag_top_k: int = 6
     rag_asset_dir: str = str(PROJECT_ROOT / "asset")
     rag_dir: str = str(DATA_DIR / "rag")
+    # 像素造境：生成图、zip 与搜索缓存
+    atelier_dir: str = str(DATA_DIR / "atelier")
+    atelier_max_jobs: int = 50
+    atelier_search_timeout: float = 4.0
 
     @property
     def tts_key(self) -> str:

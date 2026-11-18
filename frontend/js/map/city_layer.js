@@ -128,6 +128,9 @@ export function createCityLayer({ scene, terrainHeight, exclude = new Set() }) {
 
   const mesh = new THREE.Mesh(geometry, material);
   mesh.frustumCulled = false;
+  // 地形是半透明材质（terrain 把 depthWrite 打开），渲染顺序相同的话会盖住光点；
+  // 这里压在地形之后、重点城市光点（2）之前渲染，普通地级市的光点才看得见。
+  mesh.renderOrder = 1;
   group.add(mesh);
 
   const handlers = {};
@@ -285,6 +288,7 @@ export function createCityLayer({ scene, terrainHeight, exclude = new Set() }) {
         if (state.labelCount !== 0) {
           labels.forEach((element) => {
             element.style.display = 'none';
+            element.style.opacity = '0';
           });
           state.labelCount = 0;
           lastLabelSignature = 'none';
@@ -337,11 +341,16 @@ export function createCityLayer({ scene, terrainHeight, exclude = new Set() }) {
         const name = cities[index].name.replace(/市$/, '');
         if (element.textContent !== name) element.textContent = name;
         element.style.display = '';
+        // 标签 CSS 默认 opacity:0，这里必须显式点亮，否则放大后地级市名不可见
+        if (element.style.opacity !== '1') element.style.opacity = '1';
         // 取整避免亚像素抖动；锚点在标签底部中心，视觉上贴着城市光点
         element.style.transform = `translate3d(${Math.round(position.x)}px, ${Math.round(chosenY[index])}px, 0) translate(-50%, -100%) translateY(3px)`;
       }
       for (let i = used; i < labels.length; i += 1) {
-        if (labels[i].style.display !== 'none') labels[i].style.display = 'none';
+        if (labels[i].style.display !== 'none') {
+          labels[i].style.display = 'none';
+          labels[i].style.opacity = '0';
+        }
       }
       state.labelCount = used;
     },

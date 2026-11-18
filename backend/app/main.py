@@ -9,7 +9,7 @@ from fastapi.staticfiles import StaticFiles
 
 from .config import FRONTEND_DIR
 from .db import init_db
-from .routers import admin, chat, cities, dynasty, flows, geo, guides, imports, rag as rag_router, route, system, trips
+from .routers import admin, atelier, chat, cities, dynasty, flows, geo, guides, imports, rag as rag_router, route, system, trips
 from .services import rag as rag_service
 
 
@@ -33,6 +33,7 @@ app.add_middleware(
 app.include_router(system.router)
 app.include_router(cities.router)
 app.include_router(chat.router)
+app.include_router(atelier.router)
 app.include_router(route.router)
 app.include_router(trips.router)
 app.include_router(flows.router)
@@ -43,7 +44,7 @@ app.include_router(rag_router.router)
 app.include_router(geo.router)
 app.include_router(admin.router)
 
-for name in ("js", "css", "assets", "vendor", "js/data"):
+for name in ("js", "css", "assets", "vendor", "js/data", "demo"):
     directory = FRONTEND_DIR / name
     if directory.exists():
         app.mount(f"/{name}", StaticFiles(directory=str(directory)), name=f"static-{name.replace('/', '-')}")
